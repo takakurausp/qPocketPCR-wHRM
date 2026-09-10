@@ -885,7 +885,8 @@ case CASE_RunQPCR:
         if (PointInRect(p, 320 - 60, 0, 60, 50)) {
           if (casePCR == PCR_END) 
           { drawMainDisplay();
-          caseUX = CASE_Main;} else
+          caseUX = CASE_Main;
+          break;} else
            caseUX = CASE_AbortRunQPCR;
         }
       }
