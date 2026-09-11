@@ -2009,6 +2009,8 @@ void handleDownload() {
     server.send(404, "text/plain", "File not found");
     return;
   }
+  // Content-Disposition でファイル名を指定
+  server.sendHeader("Content-Disposition", "attachment; filename=DATAQPCR.TXT");
   server.streamFile(file, "text/csv");
   file.close();
 }
