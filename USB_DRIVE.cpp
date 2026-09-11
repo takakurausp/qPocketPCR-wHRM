@@ -142,12 +142,12 @@ FAT_TBL2B(0x2B, 0xFFF),
     0x20,                 //file attributes: FILE_ATTR_ARCHIVE
     0x00,                 //ignore
     FAT_MS2B(1,980),      //creation_time_10_ms (max 199x10 = 1s 990ms)
-    FAT_HMS2B(13,42,36),  //create_time_hms [5:6:5] => h:m:(s/2)
-    FAT_YMD2B(2018,11,5), //create_time_ymd [7:4:5] => (y+1980):m:d
-    FAT_YMD2B(2020,11,5), //last_access_ymd
+    FAT_HMS2B(12,0,0),    //create_time_hms: 12:00:00
+    FAT_YMD2B(2037,1,1),  //create_time_ymd: 2037-01-01 (FAR FUTURE)
+    FAT_YMD2B(2037,1,1),  //last_access_ymd: 2037-01-01
     FAT_U16(0),           //extended_attributes
-    FAT_HMS2B(13,44,16),  //last_modified_hms
-    FAT_YMD2B(2019,11,5), //last_modified_ymd
+    FAT_HMS2B(12,0,0),    //last_modified_hms: 12:00:00
+    FAT_YMD2B(2037,1,1),  //last_modified_ymd: 2037-01-01
     FAT_U16(2),           //start of file in cluster
     FAT_U32(sizeof(PROTOCOL_TEMPLATE)-1), //file size
 
@@ -158,12 +158,12 @@ FAT_TBL2B(0x2B, 0xFFF),
     0x20,                 //file attributes: FILE_ATTR_ARCHIVE
     0x00,                 //ignore
     FAT_MS2B(1,980),      //creation_time_10_ms (max 199x10 = 1s 990ms)
-    FAT_HMS2B(13,42,36),  //create_time_hms [5:6:5] => h:m:(s/2)
-    FAT_YMD2B(2018,11,5), //create_time_ymd [7:4:5] => (y+1980):m:d
-    FAT_YMD2B(2020,11,5), //last_access_ymd
+    FAT_HMS2B(12,0,0),    //create_time_hms: 12:00:00
+    FAT_YMD2B(2037,1,1),  //create_time_ymd: 2037-01-01 (FAR FUTURE)
+    FAT_YMD2B(2037,1,1),  //last_access_ymd: 2037-01-01
     FAT_U16(0),           //extended_attributes
-    FAT_HMS2B(13,44,16),  //last_modified_hms
-    FAT_YMD2B(2019,11,5), //last_modified_ymd
+    FAT_HMS2B(12,0,0),    //last_modified_hms: 12:00:00
+    FAT_YMD2B(2037,1,1),  //last_modified_ymd: 2037-01-01
     FAT_U16(DATAQPCR_START_CLUSTER), //start of file in cluster
     FAT_U32(0), //file size
     
