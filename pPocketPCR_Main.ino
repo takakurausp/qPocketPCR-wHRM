@@ -1991,6 +1991,18 @@ void handleStatus() {
 void handleStart() {
   if (caseUX == CASE_Main || casePCR == PCR_END) {
     loadProtocol();
+
+    // WiFi経由の開始でも画面RUNと同じバッファ上限チェックを行う。
+    // これがないとfluorescence[][]（MAX_MEASUREMENTS=240）をオーバーフローし、
+    // 配列外書き出しによるメモリ破壊でESP32がクラッシュ／リセットする。
+    int wifiCaptures = countCaptures();
+    if (wifiCaptures >= MAX_MEASUREMENTS) {
+      Serial.print("WiFi start: Too many measurements: ");
+      Serial.println(wifiCaptures);
+      server.send(200, "text/plain", "Too many measurements: " + String(wifiCaptures));
+      return;
+    }
+
     caseUX = CASE_InitQPCR;
     server.send(200, "text/plain", "Started");
   } else {
