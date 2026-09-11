@@ -2004,7 +2004,7 @@ void handleStop() {
 }
 
 void handleDownload() {
-  File file = SPIFFS.open("/DATAQPCR.TXT", FILE_READ);
+  File file = SPIFFS.open("/DATA.TXT", FILE_READ);
   if (!file) {
     server.send(404, "text/plain", "File not found");
     return;
@@ -2016,14 +2016,29 @@ void handleDownload() {
 void handleUpload() {
   HTTPUpload& upload = server.upload();
   static File uploadFile;
+  static size_t uploadSize = 0;
   if (upload.status == UPLOAD_FILE_START) {
     Serial.printf("Upload start: %s\n", upload.name.c_str());
+    uploadSize = 0;
     uploadFile = SPIFFS.open("/PROTOCOL.TXT", FILE_WRITE);
+    if (!uploadFile) {
+      Serial.println("Failed to open file for writing!");
+    }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (uploadFile) uploadFile.write(upload.buf, upload.currentSize);
+    if (uploadFile) {
+      size_t written = uploadFile.write(upload.buf, upload.currentSize);
+      uploadSize += written;
+      Serial.printf("Write: %d bytes (total: %d)\n", written, uploadSize);
+    } else {
+      Serial.println("File not open for writing!");
+    }
   } else if (upload.status == UPLOAD_FILE_END) {
-    if (uploadFile) uploadFile.close();
-    Serial.printf("Upload end: %d bytes\n", upload.totalSize);
+    if (uploadFile) {
+      uploadFile.close();
+      Serial.printf("Upload complete: %d bytes total\n", uploadSize);
+    } else {
+      Serial.println("File was not open!");
+    }
   }
 }
 

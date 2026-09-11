@@ -232,8 +232,18 @@ void parseConfig(String InputStream)
 }
 void loadProtocol()
 {
+  // SPIFFS に PROTOCOL.TXT があれば優先して読み込む（Web アップロード対応）
+  File protoFile = SPIFFS.open("/PROTOCOL.TXT", FILE_READ);
+  if (protoFile) {
+    String myConfig = protoFile.readString();
+    protoFile.close();
+    Serial.printf("loadProtocol: from SPIFFS (%d bytes)\n", myConfig.length());
+    parseConfig(myConfig);
+    return;
+  }
 
+  // なければ USB ディスクイメージから読み込む
   String myConfig = getConfig();
-  // Serial.println(myConfig);
+  Serial.printf("loadProtocol: from USB disk (%d bytes)\n", myConfig.length());
   parseConfig(myConfig);
 }
