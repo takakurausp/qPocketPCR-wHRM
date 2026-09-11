@@ -9,6 +9,9 @@
 #include "USB_DRIVE.h"
 #include "Parsing.h"
 
+#include <WiFi.h>
+#include <WebServer.h>
+
 #define sensor_t camera_sensor_t
 #include "esp_camera.h"
 #undef sensor_t
@@ -290,6 +293,13 @@ uint16_t *camSpriteBuf ;
 uint8_t *baseBuf;
 boolean *maskBuf;
 
+// WiFi / Web Server
+WebServer server(80);
+const char* ap_ssid = "qPocketPCR";
+const char* ap_password = "12345678";
+bool wifiEnabled = false;
+bool stopRequested = false;
+
 
 // ==================== SETUP ====================
 
@@ -488,6 +498,24 @@ delay(2000);
 
   drawMainDisplay();
 
+  // WiFi AP モード開始
+  WiFi.softAP(ap_ssid, ap_password);
+  wifiEnabled = true;
+  Serial.print("WiFi AP started: ");
+  Serial.println(ap_ssid);
+  Serial.print("IP: ");
+  Serial.println(WiFi.softAPIP());
+
+  // Web サーバーハンドラ登録
+  server.on("/", handleRoot);
+  server.on("/status", handleStatus);
+  server.on("/start", handleStart);
+  server.on("/stop", handleStop);
+  server.on("/download", handleDownload);
+  server.on("/upload", HTTP_POST, handleUploadDone, handleUpload);
+  server.begin();
+  Serial.println("Web server started on port 80");
+
 } // setup
 
 // ==================== MAIN LOOP ====================
@@ -499,6 +527,10 @@ if (newConfigAvailable) {loadProtocol();newConfigAvailable=false;if (caseUX==CAS
 
 if (millis() - myTime_WD > TEMP_CHECK_INTERVAL_MS) {readTemperatures();}
 
+// WiFi クライアント処理
+if (wifiEnabled) {
+  server.handleClient();
+}
 
 switch (caseUX) {
   
@@ -964,7 +996,18 @@ case CASE_RunQPCR:
         
         case PCR_TRANSITION:
           runPID();
-          //draw_run_display();
+          //draw_run_display()
+
+          // [追加] 停止要求があれば即座に終了
+          if (stopRequested) {
+            setHeaters(temperature_mean, 0,0);
+            stopCam();
+            addDataToUSB();
+            casePCR = PCR_END;
+            stopRequested = false;
+            break;
+          }
+
           if (abs(TEMPset - temperature_mean) < TEMP_TOLLERANCE) {
             PIDIntegration = true;
             TIMEclick = millis();
@@ -981,6 +1024,16 @@ case CASE_RunQPCR:
           // Serial.println(pcrProtocol.repeatEnd);
 
           if (pcrProtocol.steps[PCRstep].capture&&(TIMEcontrol <= ILLUMINATION_TIME)&&!saveReady) {initSaveMeasurement(); saveReady=true;};
+
+          // [追加] 停止要求があれば即座に終了
+          if (stopRequested && !saveReady) {
+            setHeaters(temperature_mean, 0,0);
+            stopCam();
+            addDataToUSB();
+            casePCR = PCR_END;
+            stopRequested = false;
+            break;
+          }
 
           if (TIMEcontrol <= 0) {
               
@@ -1875,4 +1928,105 @@ void emergencyShutdown() {
   while (true) //!ts.touched()
   {esp_task_wdt_reset();} // Feed the watchdog 
   
+}
+
+// ==================== Web Server Handlers ====================
+
+int getProgress() {
+  if (casePCR == PCR_END) return 100;
+  if (pcrProtocol.stepCount == 0) return 0;
+  
+  if (pcrProtocol.melt && pcrProtocol.meltPoints > 0) {
+    return (int)((float)measurements / pcrProtocol.meltPoints * 100);
+  } else if (pcrProtocol.cycleCount > 0) {
+    return (int)((float)PCRcycle / pcrProtocol.cycleCount * 100);
+  }
+  return 0;
+}
+
+String getModeString() {
+  if (casePCR == PCR_END) return "COMPLETE";
+  if (casePCR == PCR_HEATLID && caseUX != CASE_RunQPCR) return "IDLE";
+  if (caseUX != CASE_RunQPCR) return "IDLE";
+  if (pcrProtocol.melt) return "HRM";
+  return "PCR";
+}
+
+void handleRoot() {
+  String html = "<!DOCTYPE html><html><head><meta charset='utf-8'>";
+  html += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
+  html += "<title>qPocketPCR</title></head><body>";
+  html += "<h1>qPocketPCR</h1>";
+  html += "<h2>Status</h2>";
+  html += "<p>Mode: <span id='mode'>" + getModeString() + "</span></p>";
+  html += "<p>Progress: <span id='progress'>" + String(getProgress()) + "</span>%</p>";
+  html += "<p>Step: <span id='step'>" + String(PCRstep + 1) + "/" + String(pcrProtocol.stepCount) + "</span></p>";
+  html += "<p>Temp: <span id='temp'>" + String(temperature_mean, 1) + "</span> C</p>";
+  html += "<h2>Control</h2>";
+  html += "<button onclick=\"fetch('/start')\">Start</button> ";
+  html += "<button onclick=\"fetch('/stop')\">Stop</button>";
+  html += "<h2>Protocol</h2>";
+  html += "<form action='/upload' method='post' enctype='multipart/form-data'>";
+  html += "<input type='file' name='protocol' accept='.txt'><br><br>";
+  html += "<button type='submit'>Upload</button></form>";
+  html += "<h2>Results</h2>";
+  html += "<a href='/download'>Download DATAQPCR.TXT</a>";
+  html += "</body></html>";
+  server.send(200, "text/html", html);
+}
+
+void handleStatus() {
+  String json = "{";
+  json += "\"mode\":\"" + getModeString() + "\",";
+  json += "\"progress\":" + String(getProgress()) + ",";
+  json += "\"step\":" + String(PCRstep + 1) + ",";
+  json += "\"stepCount\":" + String(pcrProtocol.stepCount) + ",";
+  json += "\"temp\":" + String(temperature_mean, 1) + ",";
+  json += "\"cycle\":" + String(PCRcycle) + ",";
+  json += "\"cycleCount\":" + String(pcrProtocol.cycleCount);
+  json += "}";
+  server.send(200, "application/json", json);
+}
+
+void handleStart() {
+  if (caseUX == CASE_Main || casePCR == PCR_END) {
+    loadProtocol();
+    caseUX = CASE_InitQPCR;
+    server.send(200, "text/plain", "Started");
+  } else {
+    server.send(200, "text/plain", "Already running");
+  }
+}
+
+void handleStop() {
+  stopRequested = true;
+  server.send(200, "text/plain", "Stop requested");
+}
+
+void handleDownload() {
+  File file = SPIFFS.open("/DATAQPCR.TXT", FILE_READ);
+  if (!file) {
+    server.send(404, "text/plain", "File not found");
+    return;
+  }
+  server.streamFile(file, "text/csv");
+  file.close();
+}
+
+void handleUpload() {
+  HTTPUpload& upload = server.upload();
+  static File uploadFile;
+  if (upload.status == UPLOAD_FILE_START) {
+    Serial.printf("Upload start: %s\n", upload.name.c_str());
+    uploadFile = SPIFFS.open("/PROTOCOL.TXT", FILE_WRITE);
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (uploadFile) uploadFile.write(upload.buf, upload.currentSize);
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (uploadFile) uploadFile.close();
+    Serial.printf("Upload end: %d bytes\n", upload.totalSize);
+  }
+}
+
+void handleUploadDone() {
+  server.send(200, "text/plain", "Upload complete");
 }
