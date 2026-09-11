@@ -1956,7 +1956,7 @@ String getModeString() {
 // Serve the standalone HRM-capable protocol builder page.
 // The full HTML is embedded as a raw string literal so no extra
 // file needs to be pre-loaded onto SPIFFS.
-const char* BUILDER_HTML = R"__BUILDER_HTML__()<!DOCTYPE html>
+const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
@@ -2306,7 +2306,7 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__()<!DOCTYPE html>
 </script>
 </body>
 </html>
-__BUILDER_HTML__";
+)__BUILDER_HTML__";
 
 void handleBuilder() {
   server.send(200, "text/html", BUILDER_HTML);
