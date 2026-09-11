@@ -1,6 +1,6 @@
 
 #include "Preferences.h"
-#define MAX_STEPS 200
+#define MAX_STEPS 400
 
 typedef struct StepType
 {

@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qPocketPCR Protocol Builder (HRM)</title>
+<style>
+  :root { --line:#d7dbe0; --accent:#2f6fb0; --grey:#f3f4f6; --dark:#333; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", sans-serif; margin:0; color:#1b1b1b; background:#fafafa; }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:14px 20px; display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:18px; margin:0; }
+  header a { color:var(--accent); text-decoration:none; font-size:13px; }
+  .wrap { max-width:960px; margin:0 auto; padding:20px; }
+  section { background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:18px; }
+  h2 { font-size:15px; margin:0 0 12px; color:#222; }
+  .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+  label { display:block; font-size:12px; color:#555; margin-bottom:4px; }
+  input[type=text], input[type=number], select { width:100%; padding:7px 8px; border:1px solid #b9c0c8; border-radius:6px; font-size:14px; background:#fff; }
+  .step { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-bottom:10px; position:relative; }
+  .step .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .step .row > div { flex:1 1 auto; min-width:90px; }
+  .step .row .dur { flex:0 0 70px; }
+  .step .row .unit { flex:0 0 80px; }
+  .step .row .cap { flex:0 0 auto; display:flex; align-items:center; gap:5px; }
+  .delbtn { position:absolute; top:8px; right:8px; border:none; background:#e9edf1; color:#555; border-radius:6px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  .delbtn:hover { background:#dcdfe4; }
+  button.primary { background:var(--accent); color:#fff; border:none; padding:9px 16px; border-radius:8px; font-size:14px; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--accent); border:1px solid var(--accent); padding:9px 16px; border-radius:8px; font-size:14px; cursor:pointer; }
+  .actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:6px; }
+  pre.preview { background:#0f172a; color:#e2e8f0; padding:14px; border-radius:8px; font-size:12.5px; line-height:1.45; overflow:auto; max-height:340px; white-space:pre-wrap; word-break:break-all; }
+  .hrm { border-left:4px solid var(--accent); background:#f6f9fc; }
+  .warn { color:#b45309; font-size:12px; margin-top:6px; min-height:16px; }
+  .status { font-size:12px; color:#15803d; min-height:16px; }
+  .device { display:flex; gap:8px; align-items:center; }
+  .chip { display:inline-block; background:var(--grey); border-radius:999px; padding:2px 10px; font-size:12px; color:#444; }
+</style>
+</head>
+<body>
+<header>
+  <h1>qPocketPCR Protocol Builder</h1>
+  <a href="/">&#8592; トップへ戻る</a>
+</header>
+
+<div class="wrap">
+
+  <!-- Header fields -->
+  <section>
+    <h2>Protocol</h2>
+    <div class="grid">
+      <div><label>Protocol Name</label><input type="text" id="name" value="My Protocol"></div>
+      <div><label>Date</label><input type="date" id="date"></div>
+      <div><label>Total Cycles</label><input type="number" id="cycles" value="35" min="0"></div>
+      <div><label>Repeat From Step</label><input type="number" id="repeatStart" value="2" min="1"></div>
+      <div><label>Repeat To Step</label><input type="number" id="repeatEnd" value="4" min="1"></div>
+    </div>
+  </section>
+
+  <!-- Steps -->
+  <section>
+    <h2>Protocol Temperature Profile &nbsp;<span class="chip" id="stepCount">0 steps</span></h2>
+    <div id="profileChart" style="height:150px; border:1px solid var(--line); border-radius:8px; margin-bottom:12px; background:#fff;"></div>
+
+    <div id="steps"></div>
+
+    <button class="ghost" id="addStep">+ Add Step</button>
+  </section>
+
+  <!-- HRM / MELT block -->
+  <section class="hrm">
+    <h2>Melt (HRM) Block &nbsp;<span class="chip" id="meltPoints">0 points</span></h2>
+    <p style="font-size:12px;color:#555;margin:0 0 10px;">PCR後に細かな温度ランプを行い、各ポイントで蛍光を取得します。CYCLES:0 にすると MELT のみ実行できます。</p>
+    <div class="grid">
+      <div><label>MELT FROM (°C)</label><input type="number" id="meltFrom" value="65" step="0.1"></div>
+      <div><label>MELT TO (°C)</label><input type="number" id="meltTo" value="95" step="0.1"></div>
+      <div><label>MELT INC (°C)</label><input type="number" id="meltInc" value="0.2" step="0.01"></div>
+      <div><label>MELT HOLD (sec)</label><input type="number" id="meltHold" value="2" min="1"></div>
+    </div>
+    <div class="warn" id="meltWarn"></div>
+  </section>
+
+  <!-- Actions -->
+  <section>
+    <h2>Save &amp; Upload</h2>
+    <div class="actions">
+      <button class="primary" id="saveBtn">Save Protocol as PROTOCOL.TXT</button>
+      <span class="status" id="uploadStatus"></span>
+    </div>
+    <div style="margin-top:12px;" class="device">
+      <label style="margin:0;">Upload to device:</label>
+      <input type="text" id="deviceUrl" placeholder="http://192.168.4.1/" style="max-width:200px;" value="">
+      <span class="chip" id="uploadHint">SAVE は PROTOCOL.TXT をダウンロードします</span>
+    </div>
+  </section>
+
+  <!-- Preview -->
+  <section>
+    <h2>Protocol Preview</h2>
+    <pre class="preview" id="preview"></pre>
+  </section>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- state ----------
+  var steps = [
+    { name:"Initial step", temp:95, dur:12, unit:"min", capture:false },
+    { name:"Denaturation", temp:94, dur:20, unit:"sec", capture:false },
+    { name:"Annealing",    temp:65, dur:15, unit:"sec", capture:false },
+    { name:"Extension",    temp:72, dur:45, unit:"sec", capture:true  },
+    { name:"Final Step",   temp:20, dur:10, unit:"min", capture:false }
+  ];
+
+  // ---------- helpers ----------
+  function fmtDuration(d, u){ return d + " " + u; }
+
+  function buildProtocolText(){
+    var name = document.getElementById("name").value || "Protocol";
+    var dateEl = document.getElementById("date");
+    var dateStr = dateEl.value ? formatDate(new Date(dateEl.value)) : "";
+    var cycles = parseInt(document.getElementById("cycles").value,10) || 0;
+    var rs = parseInt(document.getElementById("repeatStart").value,10) || 1;
+    var re = parseInt(document.getElementById("repeatEnd").value,10) || 1;
+    if (re < rs) re = rs;
+
+    var lines = [];
+    lines.push("NAME: " + name);
+    if (dateStr) lines.push(" DATE: " + dateStr);
+    lines.push("");
+    lines.push(" PROTOCOL: ");
+    lines.push("  ");
+    lines.push(" REPEAT: " + rs + "-" + re);
+    lines.push(" CYCLES: " + cycles);
+    lines.push("");
+
+    for (var i=0;i<steps.length;i++){
+      var s = steps[i];
+      lines.push(" STEP " + (i+1) + ": " + s.name);
+      lines.push("    TEMPERATURE: " + s.temp + "\u00b0C");
+      lines.push("    DURATION: " + fmtDuration(s.dur, s.unit));
+      if (s.capture) lines.push("    CAPTURE: yes");
+      lines.push("    ");
+    }
+
+    // MELT block
+    var mf = parseFloat(document.getElementById("meltFrom").value);
+    var mt = parseFloat(document.getElementById("meltTo").value);
+    var mi = parseFloat(document.getElementById("meltInc").value);
+    var mh = parseInt(document.getElementById("meltHold").value,10) || 1;
+    if (!isNaN(mf) && !isNaN(mt) && !isNaN(mi) && mi > 0){
+      lines.push(" MELT FROM: " + mf.toFixed(1));
+      lines.push(" MELT TO: " + mt.toFixed(1));
+      lines.push(" MELT INC: " + mi);
+      lines.push(" MELT HOLD: " + mh);
+    }
+
+    return lines.join("\n") + "\n";
+  }
+
+  function formatDate(d){
+    if (isNaN(d)) return "";
+    var y=d.getFullYear();
+    var m=("0"+(d.getMonth()+1)).slice(-2);
+    var day=("0"+d.getDate()).slice(-2);
+    return m + "." + day + "." + y;
+  }
+
+  function meltPointCount(){
+    var mf = parseFloat(document.getElementById("meltFrom").value);
+    var mt = parseFloat(document.getElementById("meltTo").value);
+    var mi = parseFloat(document.getElementById("meltInc").value);
+    if (isNaN(mf)||isNaN(mt)||isNaN(mi)||mi<=0) return 0;
+    // Must match Parsing.cpp exactly: (int)((meltTo - meltFrom) / meltInc + 0.5f) + 1
+  // Use Math.floor(x+0.5), NOT Math.round, to mirror C++'s truncating cast.
+  return Math.floor((mt-mf)/mi + 0.5) + 1;
+  }
+
+  // ---------- rendering: step editor ----------
+  function renderSteps(){
+    var box = document.getElementById("steps");
+    box.innerHTML = "";
+    steps.forEach(function(s, idx){
+      var div = document.createElement("div");
+      div.className = "step";
+      div.innerHTML =
+        '<button class="delbtn" data-idx="'+idx+'">Delete</button>'+
+        '<div class="row">'+
+          '<div style="flex:2 1 140px;"><label>Step Name</label><input type="text" data-f="name" value="'+esc(s.name)+'"></div>'+
+          '<div style="flex:1 1 80px;"><label>Temperature (\u00b0C)</label><input type="number" step="0.1" data-f="temp" value="'+s.temp+'"></div>'+
+          '<div class="dur"><label>Duration</label><input type="number" data-f="dur" value="'+s.dur+'"></div>'+
+          '<div class="unit"><label>Unit</label><select data-f="unit">'+
+            '<option value="sec"'+(s.unit==="sec"?" selected":"")+'>seconds</option>'+
+            '<option value="min"'+(s.unit==="min"?" selected":"")+'>minutes</option>'+
+          '</select></div>'+
+          '<div class="cap"><label style="margin:0;display:flex;align-items:center;height:32px;"><input type="checkbox" data-f="capture"'+(s.capture?" checked":"")+'> Capture</label></div>'+
+        '</div>';
+      box.appendChild(div);
+    });
+    document.getElementById("stepCount").textContent = steps.length + " step" + (steps.length===1?"":"s");
+
+    // events
+    box.querySelectorAll("input[data-f], select[data-f]").forEach(function(el){
+      el.addEventListener("input", function(){
+        var s = steps[+el.getAttribute("data-idx") || 0];
+        // find step by index attribute on closest .step
+        var stepEl = el.closest(".step");
+        var i = Array.prototype.indexOf.call(box.children, stepEl);
+        var f = el.getAttribute("data-f");
+        if (f==="name"){ steps[i].name = el.value; }
+        else if (f==="temp"){ steps[i].temp = parseFloat(el.value)||0; }
+        else if (f==="dur"){ steps[i].dur = parseFloat(el.value)||0; }
+        else if (f==="unit"){ steps[i].unit = el.value; }
+        else if (f==="capture"){ steps[i].capture = el.checked; }
+        renderChart(); updatePreview();
+      });
+    });
+    box.querySelectorAll(".delbtn").forEach(function(b){
+      b.addEventListener("click", function(){
+        var stepEl = b.closest(".step");
+        var i = Array.prototype.indexOf.call(box.children, stepEl);
+        steps.splice(i,1); renderSteps(); updatePreview();
+      });
+    });
+  }
+
+  function esc(v){ return String(v).replace(/&/g,"&amp;").replace(/"/g,"&quot;"); }
+
+  // ---------- rendering: temperature profile chart ----------
+  function renderChart(){
+    var c = document.getElementById("profileChart");
+    c.innerHTML = "";
+    var W = c.clientWidth || (c.parentElement.clientWidth - 40);
+    if (W < 100) W = 300;
+    var H = 150, padL=28, padB=16;
+    var n = steps.length;
+    if (!n){ c.textContent="Add a step to preview the temperature profile."; return; }
+    var temps = steps.map(function(s){return s.temp;});
+    var tmin = Math.min.apply(null,temps), tmax = Math.max.apply(null,temps);
+    var span = (tmax-tmin)||10; tmin-=span*0.15; tmax+=span*0.15;
+    var usableW = W - padL - 10;
+    var xFor = function(i){ return padL + (n===1?usableW/2:(i/(n-1))*usableW); };
+    var yFor = function(t){ return padB + (H-padB-8)*((tmax-t)/(tmax-tmin)); };
+
+    // baseline line
+    var svgNS="http://www.w3.org/2000/svg";
+    var svg=document.createElementNS(svgNS,"svg");
+    svg.setAttribute("width",W); svg.setAttribute("height",H);
+    svg.setAttribute("viewBox","0 0 "+W+" "+H);
+    svg.style.width="100%"; svg.style.height="150px";
+
+    var base=document.createElementNS(svgNS,"line");
+    base.setAttribute("x1",padL); base.setAttribute("y1",H-padB);
+    base.setAttribute("x2",W-4); base.setAttribute("y2",H-padB);
+    base.setAttribute("stroke","#d7dbe0"); base.setAttribute("stroke-width","1");
+    svg.appendChild(base);
+
+    // polyline
+    var pts = steps.map(function(s,i){ return xFor(i)+","+yFor(s.temp); }).join(" ");
+    var poly=document.createElementNS(svgNS,"polyline");
+    poly.setAttribute("points",pts);
+    poly.setAttribute("fill","none"); poly.setAttribute("stroke","#2f6fb0"); poly.setAttribute("stroke-width","2.5");
+    svg.appendChild(poly);
+
+    steps.forEach(function(s,i){
+      var c=document.createElementNS(svgNS,"circle");
+      c.setAttribute("cx",xFor(i)); c.setAttribute("cy",yFor(s.temp)); c.setAttribute("r","4");
+      c.setAttribute("fill", s.capture?"#b45309":"#2f6fb0");
+      svg.appendChild(c);
+      var t=document.createElementNS(svgNS,"text");
+      t.setAttribute("x",xFor(i)); t.setAttribute("y",yFor(s.temp)-9);
+      t.setAttribute("font-size","11"); t.setAttribute("text-anchor","middle"); t.setAttribute("fill","#333");
+      t.textContent=(i+1)+" "+s.temp+"\u00b0C";
+      svg.appendChild(t);
+    });
+    c.appendChild(svg);
+  }
+
+  // ---------- preview + melt warn ----------
+  function updatePreview(){
+    document.getElementById("preview").textContent = buildProtocolText();
+    var mp = meltPointCount();
+    document.getElementById("meltPoints").textContent = mp + " point" + (mp===1?"":"s");
+    var totalSteps = steps.length + mp;
+    var warn = document.getElementById("meltWarn");
+    if (totalSteps > 200){
+      warn.textContent = "\u26a0 Total steps ("+totalSteps+") exceed MAX_STEPS=200. Melt ramp will be truncated to "+(200-steps.length)+" points.";
+    } else {
+      warn.textContent = "";
+    }
+  }
+
+  // ---------- save / upload ----------
+  function downloadProtocol(){
+    var text = buildProtocolText();
+    var blob = new Blob([text], {type:"text/plain"});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "PROTOCOL.TXT";
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  }
+
+  function uploadToDevice(url){
+    var status = document.getElementById("uploadStatus");
+    if (!url) { return; }
+    url = url.replace(/\/$/,"");
+    var text = buildProtocolText();
+    var blob = new Blob([text], {type:"text/plain"});
+    var fd = new FormData();
+    fd.append("protocol", blob, "PROTOCOL.TXT");
+    status.textContent = "Uploading...";
+    fetch(url + "/upload", { method:"POST", body:fd })
+      .then(function(r){ return r.text().then(function(t){ return {ok:r.ok, t:t}; }); })
+      .then(function(res){
+        status.textContent = res.ok ? ("Uploaded to device ("+res.t+")") : "Upload failed";
+      })
+      .catch(function(e){ status.textContent = "Upload error: "+e.message; });
+  }
+
+  // ---------- init ----------
+  document.getElementById("addStep").addEventListener("click", function(){
+    steps.push({ name:"New step", temp:72, dur:30, unit:"sec", capture:false });
+    renderSteps(); updatePreview();
+  });
+  document.getElementById("saveBtn").addEventListener("click", function(){
+    downloadProtocol();
+    var url = document.getElementById("deviceUrl").value.trim();
+    if (url) uploadToDevice(url);
+  });
+
+  // live-update when melt fields change too
+  ["meltFrom","meltTo","meltInc","meltHold"].forEach(function(id){
+    document.getElementById(id).addEventListener("input", updatePreview);
+  });
+
+  // default date = today
+  var d = new Date();
+  document.getElementById("date").value = formatDate(d);
+
+  renderSteps();
+  renderChart();
+  updatePreview();
+  window.addEventListener("resize", renderChart);
+})();
+</script>
+</body>
+</html>
