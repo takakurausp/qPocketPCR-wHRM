@@ -1,0 +1,12 @@
+{
+  "channel_names": ["ch0", "ch1", "ch2", "ch3", "ch4", "ch5", "ch6", "ch7"],
+  "frac_baseline": 0.5,
+  "roles": {
+    "sample": {
+      "ch0": "unknown_1",
+      "ch1": "unknown_2"
+    },
+    "standard": {},
+    "ntc": []
+  }
+}

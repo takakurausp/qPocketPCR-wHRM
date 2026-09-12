@@ -1,0 +1,19 @@
+{
+  "channel_names": ["ch0", "ch1", "ch2", "ch3", "ch4", "ch5", "ch6", "ch7"],
+  "frac_baseline": 0.5,
+  "roles": {
+    "standard": {
+      "ch0": 1000000,
+      "ch1": 100000,
+      "ch2": 10000,
+      "ch3": 1000,
+      "ch4": 100,
+      "ch5": 10
+    },
+    "sample": {
+      "ch6": "eDNA_sample_1",
+      "ch7": "eDNA_sample_2"
+    },
+    "ntc": []
+  }
+}
