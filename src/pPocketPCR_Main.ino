@@ -236,6 +236,10 @@ float fluorescence[NUM_SENSORS][MAX_MEASUREMENTS];
 float wellFactor[NUM_SENSORS];
 
 float last_values[NUM_SENSORS];
+
+// --- Robustness counters (camera capture + data write) ---
+int cameraFailCount = 0;   // number of failed camera captures in the current run
+int writeFailCount = 0;    // number of failed SPIFFS data-appends in the current run
 long sensor_center_x[NUM_SENSORS];
 long sensor_center_y[NUM_SENSORS];
 
@@ -913,6 +917,10 @@ case CASE_AbortRunQPCR:
    
 case CASE_RunQPCR:
 
+      // Reset robustness counters at the start of each run.
+      cameraFailCount = 0;
+      writeFailCount = 0;
+
       if (ts.touched()) {
         p = ts.getPoint();
         if (PointInRect(p, 320 - 60, 0, 60, 50)) {
@@ -1039,6 +1047,13 @@ case CASE_RunQPCR:
           if (TIMEcontrol <= 0) {
               
             if (pcrProtocol.steps[PCRstep].capture)   {measurements++; measureTemp = temperature_mean; SaveMeasurement(8);saveReady=false;}
+            // Flash the screen red briefly if a camera capture or data write failed,
+            // so the operator notices without having to read the serial log.
+            if (cameraFailCount > 0 || writeFailCount > 0) {
+              tft.fillScreen(TFT_RED);
+              vTaskDelay(150 / portTICK_PERIOD_MS);
+              drawGrid();
+            }
             
             if (PCRstep == pcrProtocol.repeatEnd-1)
             {PCRcycle++;
@@ -1122,16 +1137,12 @@ void SaveMeasurement(int step_size)
   Serial.print(myFileName);
   File file = SPIFFS.open(myFileName, FILE_APPEND);
   if (!file) {
+    // Cannot open the data file for appending. Report it and skip this point
+    // instead of silently writing to a closed handle (which would corrupt or
+    // lose the measurement record).
+    writeFailCount++;
     Serial.println("- failed to open file for appending");
-    /*  bool formatted = SPIFFS.format();
-      if(formatted){
-      Serial.println("\n\nSuccess formatting");
-      }else{
-      Serial.println("\n\nError formatting");
-      }
-    */
-
-
+    return;
   }
 
   file.print(PCRcycle);
@@ -1166,11 +1177,27 @@ void MeasureCam()
  
 
   camera_fb_t * image_fb = NULL;
-  image_fb = esp_camera_fb_get();
-  
+
+  // Retry camera capture a few times. A single transient read failure must not
+  // drop the whole measurement point (important for HRM curve continuity).
+  const int CAM_RETRIES = 3;
+  int camRetries = 0;
+  while ((image_fb == NULL) && (camRetries < CAM_RETRIES)) {
+    image_fb = esp_camera_fb_get();
+    if (!image_fb) {
+      camRetries++;
+      vTaskDelay(2 / portTICK_PERIOD_MS); // brief settle before retry
+    }
+  }
+
   if (!image_fb)
   {
-    ESP_LOGE("my", "Camera capture failed");
+    ESP_LOGE("my", "Camera capture failed after retries");
+    cameraFailCount++;
+    // Keep the previous fluorescence value so the curve stays continuous.
+    for (int sensor = 0; sensor < NUM_SENSORS; sensor++) {
+      fluorescence[sensor][measurements] = last_values[sensor];
+    }
   } else
   {
 
@@ -1202,6 +1229,7 @@ void MeasureCam()
         } //for x
       } //for y
             fluorescence[sensor][measurements] = (float)intensity_sum*wellFactor[sensor]/ intensityCount;
+      last_values[sensor] = fluorescence[sensor][measurements];
 
     }//for Sensors
 
