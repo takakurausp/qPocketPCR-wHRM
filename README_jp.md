@@ -233,6 +233,43 @@ pio run -t upload       # USB接続で装置へフラッシュ
 pio monitor             # 115200 ボーのシリアルコンソール
 ```
 
+### Adafruit WebSerial ESP Tool での書き込み
+
+`pio upload` の代わりにブラウザから書き込む場合は、[Adafruit WebSerial ESP Tool](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/) を使います。5つのスロットがありますが、使うのは**3つだけ**です：
+
+| スロット | ファイル | Offset（0x形式） |
+|------|------|------|
+| 1番目 | `bootloader.bin` | `0x0000` |
+| 2番目 | `partitions.bin` | `0x8000` |
+| 3番目 | `firmware.bin` | `0x10000` |
+
+4・5番目のスロットは空のまま（Offset は `0` のまま）でかまいません。3つのファイルは `.pio/build/esp32_s2_usb_native/` にあります：
+
+- `bootloader.bin`（約 14.8 KB）
+- `partitions.bin`（約 3 KB）
+- `firmware.bin`（約 997 KB ← メイン本体）
+
+**手順：**
+
+1. ブラウザで [https://adafruit.github.io/Adafruit_WebSerial_ESPTool/](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/) を開く
+2. **Baud** を選択（推奨 **460800**、なければ 115200）
+3. ESP32-S2 をUSB接続した状態で **Connect** をクリック
+4. 各スロットで「Choose a file…」から上の bin を選び、Offset 欄に上の値を入力
+5. **Program** ボタンを押す（Erase は自動で行われる）
+
+### オフセットがこの値である理由
+
+- `partitions.bin` は ESP32 の仕様で常に **0x8000** に配置される固定位置
+- `firmware.bin` はアプリ本体で **0x10000**（標準的なファームウェア領域の始まり）
+- 実行アドレスは `0x40026b84` で、0x10000 配下にロードされる構成
+
+---
+
+> ⚠️ **注意点**
+> - 書き込み前に ESP32-S2 をUSBケーブルでPCに接続し、ブラウザの Connect が成功していることを確認してください。
+> - `firmware.bin` が約 997 KB と大きいため、460800 baud でも数分かかることがあります。
+> - 1回で全部入らない場合は、**firmware.bin 単体（0x10000）だけ**書き込めば動作します（bootloader/partitions は既存のまま）。
+
 ## クレジット
 
 本ファirmwareは、原版の[qPocketPCR](https://github.com/GaudiLabs/qPocketPCR)（GaudiLabs、Urs Gaudenz）をベースにした独立したフォーク **qPocketPCR-wHRM v0.1** です。原版はそのまま **V1.1** を維持し、本フォークで高分解能融解曲線（HRM）・128 KB USB Mass Storage・WiFi によるWeb制御・名前付きプロトコル保存を追加しました。

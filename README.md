@@ -233,6 +233,37 @@ pio run -t upload       # flash to device (connect via USB)
 pio monitor             # serial console at 115200 baud
 ```
 
+### Flashing with the Adafruit WebSerial ESP Tool
+
+If you prefer to flash over a browser instead of `pio upload`, use the [Adafruit WebSerial ESP Tool](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/). It has five slots, but only **three** are used:
+
+| Slot | File | Offset (hex) |
+|------|------|--------------|
+| 1st | `bootloader.bin` | `0x0000` |
+| 2nd | `partitions.bin` | `0x8000` |
+| 3rd | `firmware.bin` | `0x10000` |
+
+Leave slots 4 and 5 empty (offset stays `0`). The three files are in `.pio/build/esp32_s2_usb_native/`:
+
+- `bootloader.bin` (~14.8 KB)
+- `partitions.bin` (~3 KB)
+- `firmware.bin` (~997 KB — the main image)
+
+**Steps:**
+
+1. Open [https://adafruit.github.io/Adafruit_WebSerial_ESPTool/](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/) in a browser.
+2. Select **Baud** (recommended **460800**, or 115200 if unavailable).
+3. Click **Connect** with the ESP32-S2 connected via USB.
+4. For each slot, use **"Choose a file…"** to pick the bin above and enter its offset in the Offset field.
+5. Press **Program** (Erase is done automatically).
+
+**Why these offsets:** `partitions.bin` is always placed at `0x8000` per the ESP32 layout, and `firmware.bin` is the app image loaded at `0x10000` (the start of the standard firmware region); the entry address is `0x40026b84`.
+
+> ⚠️ **Notes**
+> - Connect the ESP32-S2 to the PC via USB and confirm that **Connect** succeeds before flashing.
+> - Because `firmware.bin` is large (~997 KB), it can take a few minutes even at 460800 baud.
+> - If it does not all fit in one go, flashing just `firmware.bin` at `0x10000` is enough to run (the bootloader and partitions stay as they are).
+
 ## Credits
 
 This firmware is **qPocketPCR-wHRM v0.1**, an independent fork of the original [qPocketPCR](https://github.com/GaudiLabs/qPocketPCR) (GaudiLabs, Urs Gaudenz), which remains at version **V1.1**. The fork adds High-Resolution Melting (HRM), 128 KB USB Mass Storage, WiFi web control, and named protocol storage.
