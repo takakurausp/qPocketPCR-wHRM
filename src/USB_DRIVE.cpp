@@ -551,6 +551,68 @@ bool loadBinFromSPIFFS(uint8_t binArray[], size_t binSize, const char* filename)
 }
 
 
+// ================= Packed mask (mask.bin) =================
+// The camera correction mask has 76800 pixels (SENS_WIDTH 640 x SENS_HEIGHT 120),
+// each a single ON/OFF bit. Storing it packed saves ~66KB vs one byte per pixel.
+// On-disk layout: byte[0] = MASK_MAGIC, bytes[1..9600] hold the bits MSB-first.
+// The in-RAM maskBuf stays a plain boolean[] array; only the on-disk form is packed.
+
+#define MASK_PIXELS (640 * 120)   // SENS_WIDTH 640 x SENS_HEIGHT 120 = 76800
+#define MASK_PACKED_BYTES ((MASK_PIXELS + 7) / 8) // 9600
+#define MASK_MAGIC 0xA7
+
+void saveMaskToSPIFFS(uint8_t *maskBuf)
+{
+    uint8_t packed[MASK_PACKED_BYTES + 1];
+    packed[0] = MASK_MAGIC;
+    for (int i = 0; i < MASK_PIXELS; i++) {
+        if (maskBuf[i]) packed[1 + (i / 8)] |= (0x80 >> (i % 8));
+    }
+
+    File file = SPIFFS.open("/mask.bin", FILE_WRITE);
+    if (!file) {
+        Serial.println("saveMaskToSPIFFS: failed to open for writing");
+        return;
+    }
+    file.write((uint8_t *)packed, sizeof(packed));
+    esp_task_wdt_reset();
+    file.close();
+    Serial.printf("saveMaskToSPIFFS: wrote %d bytes (magic 0x%02X)\n", sizeof(packed), packed[0]);
+}
+
+bool loadMaskFromSPIFFS(uint8_t *maskBuf)
+{
+    File file = SPIFFS.open("/mask.bin", FILE_READ);
+    if (!file) {
+        Serial.println("loadMaskFromSPIFFS: mask.bin not found");
+        return true; // failure
+    }
+
+    uint8_t packed[MASK_PACKED_BYTES + 1];
+    size_t bytesRead = file.readBytes((char *)packed, sizeof(packed));
+    file.close();
+
+    if (bytesRead != sizeof(packed)) {
+        Serial.println("loadMaskFromSPIFFS: incomplete read");
+        return true; // failure
+    }
+
+    // Backward compatibility: an old byte-packed mask.bin has no magic byte.
+    // If the first byte is not the magic, treat the whole file as legacy and
+    // fall back to a fresh initMask() so the device still works.
+    if (packed[0] != MASK_MAGIC) {
+        Serial.println("loadMaskFromSPIFFS: bad magic - ignoring legacy mask.bin");
+        return true; // failure -> caller will re-init mask
+    }
+
+    for (int i = 0; i < MASK_PIXELS; i++) {
+        maskBuf[i] = (packed[1 + (i / 8)] & (0x80 >> (i % 8))) != 0;
+    }
+    Serial.printf("loadMaskFromSPIFFS: loaded %d pixels\n", MASK_PIXELS);
+    return false; // success
+}
+
+
 
 
 void saveMscToSPIFFS(uint8_t array[DISK_SECTOR_COUNT][DISK_SECTOR_SIZE]) {
@@ -610,8 +672,15 @@ static bool onStartStop(uint8_t power_condition, bool start, bool load_eject){
       Serial.println("start stop");
          shoudSave=true;
          saveTime=millis();
-         
-            //  saveMscToSPIFFS(msc_disk);
+
+         // On eject, persist the disk image to SPIFFS immediately so that a
+         // "remove device" cannot lose an unwritten protocol/data file. This is
+         // independent of cameraOn (which otherwise blocks Service_USB()).
+         if (load_eject) {
+             saveMscToSPIFFS(msc_disk);
+             shoudSave=false;
+             Serial.println("save-on-eject");
+         }
   return true;
 }
 
@@ -694,7 +763,11 @@ void Start_USB_Drive()
 
 void Service_USB()
 {
-  if (!cameraOn&&shoudSave&&((millis()-saveTime)>1000)){saveMscToSPIFFS(msc_disk);shoudSave=false;      Serial.println("save");
+  // Persist the disk image to SPIFFS once per write/eject event. The previous
+  // !cameraOn guard was removed: camera state is irrelevant to the USB data
+  // files, and leaving it in blocked saves after a measurement run (which can
+  // leave the camera running), causing "device removal" to lose unwritten data.
+  if (shoudSave && ((millis()-saveTime)>1000)){saveMscToSPIFFS(msc_disk);shoudSave=false;      Serial.println("save");
    newConfigAvailable=true;
    saveTime=millis();
 }

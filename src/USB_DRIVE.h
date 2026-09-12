@@ -59,3 +59,9 @@ void saveBinToSPIFFS(uint8_t binArray[],size_t binSize,const char* filename);
 bool readMscFromSPIFFS(uint8_t array[DISK_SECTOR_COUNT][DISK_SECTOR_SIZE]);
 
 bool loadBinFromSPIFFS(uint8_t binArray[], size_t binSize, const char* filename);
+
+// Mask (76800 pixels = 640 x 120) stored packed on SPIFFS as /mask.bin to save ~66KB.
+// Layout: byte[0]=MASK_MAGIC (0xA7), bytes[1..9600] hold the 76800 bits MSB-first per byte.
+// The in-RAM maskBuf stays a plain boolean[] array; only the on-disk representation is packed.
+void saveMaskToSPIFFS(uint8_t *maskBuf);   // pack + write (returns void)
+bool loadMaskFromSPIFFS(uint8_t *maskBuf);  // read + unpack; false=success, true=failure

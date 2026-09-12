@@ -479,7 +479,7 @@ if (reason == ESP_RST_TASK_WDT || reason == ESP_RST_WDT) {
  else   status_line("Baseline loaded",false);
 
 initMask();
-if (loadBinFromSPIFFS((uint8_t *)maskBuf,SENS_WIDTH*SENS_HEIGHT ,"/mask.bin"))
+if (loadMaskFromSPIFFS((uint8_t *)maskBuf))
  {
   status_line("Mask loaded",true);
     initMask();
@@ -678,6 +678,7 @@ case CASE_RunComplete:
 if (ts.touched()) {
         caseUX = CASE_Main;
         drawMainDisplay();
+        stopCam();   // Ensure camera is stopped on return to main so the next USB save is not blocked.
         }
 break; //CASE_RunComplete
 
@@ -832,7 +833,7 @@ if(ts.touched()) {touch=true;p=ts.getPoint();if(p.y>0) tpoint = p;}
 
        }
 
-        saveBinToSPIFFS((uint8_t *)maskBuf,SENS_WIDTH*SENS_HEIGHT * sizeof(boolean) ,"/mask.bin");
+        saveMaskToSPIFFS((uint8_t *)maskBuf);
 
         caseUX = CASE_Main;
         break;
