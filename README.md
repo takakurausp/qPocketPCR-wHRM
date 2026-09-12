@@ -233,6 +233,13 @@ pio run -t upload       # flash to device (connect via USB)
 pio monitor             # serial console at 115200 baud
 ```
 
+## Credits
+
+This firmware is **qPocketPCR-wHRM v0.1**, an independent fork of the original [qPocketPCR](https://github.com/GaudiLabs/qPocketPCR) (GaudiLabs, Urs Gaudenz), which remains at version **V1.1**. The fork adds High-Resolution Melting (HRM), 128 KB USB Mass Storage, WiFi web control, and named protocol storage.
+
+- Original project: qPocketPCR — GaudiLabs / Urs Gaudenz (GPL-3.0)
+- Fork & extensions: © Takakura Kōichi (GPL-3.0)
+
 ## License
 
 This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**, matching the license of the original [qPocketPCR](https://github.com/GaudiLabs/qPocketPCR) repository.

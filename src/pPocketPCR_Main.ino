@@ -42,7 +42,7 @@
 // ==================== CONSTANTS AND CONFIGURATION ====================
 
 // Version and system configuration
-#define VERSION_STRING  "V1.1"
+#define VERSION_STRING  "v0.1"
 #define FORMAT_SPIFFS_IF_FAILED true
 #define FILESYSTEM SPIFFS
 
@@ -378,6 +378,8 @@ void setup() {
   tft.setFreeFont(&GaudiSans7pt7b);
 
 status_line("Software",false,"Version "+(String)VERSION_STRING);
+status_line("Forked from qPocketPCR V1.1 (GaudiLabs)",false);
+status_line("Extended by Takakura",false);
 
 
 esp_reset_reason_t reason = esp_reset_reason();
@@ -2336,6 +2338,7 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
   window.addEventListener("resize", renderChart);
 })();
 </script>
+<footer style="margin-top:2em;font-size:11px;color:#888;">qPocketPCR-wHRM v0.1 &mdash; forked from qPocketPCR V1.1 (GaudiLabs); &copy; Takakura</footer>
 </body>
 </html>
 )__BUILDER_HTML__";
@@ -2364,6 +2367,7 @@ void handleRoot() {
   html += "<button type='submit'>Upload</button></form>";
   html += "<h2>Results</h2>";
   html += "<a href='/download'>Download DATAQPCR.TXT</a>";
+  html += "<p style='margin-top:2em;font-size:11px;color:#888;'>qPocketPCR-wHRM v0.1 &mdash; forked from qPocketPCR V1.1 (GaudiLabs); &copy; Takakura</p>";
   html += "</body></html>";
   server.send(200, "text/html", html);
 }

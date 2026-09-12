@@ -233,6 +233,13 @@ pio run -t upload       # USB接続で装置へフラッシュ
 pio monitor             # 115200 ボーのシリアルコンソール
 ```
 
+## クレジット
+
+本ファirmwareは、原版の[qPocketPCR](https://github.com/GaudiLabs/qPocketPCR)（GaudiLabs、Urs Gaudenz）をベースにした独立したフォーク **qPocketPCR-wHRM v0.1** です。原版はそのまま **V1.1** を維持し、本フォークで高分解能融解曲線（HRM）・128 KB USB Mass Storage・WiFi によるWeb制御・名前付きプロトコル保存を追加しました。
+
+- 元プロジェクト: qPocketPCR — GaudiLabs / Urs Gaudenz（GPL-3.0）
+- フーク・拡張: © 高倉耕一（GPL-3.0）
+
 ## ライセンス
 
 このプロジェクトは **GNU General Public License v3.0 (GPL-3.0)** でライセンスされています。これはオリジナルの [qPocketPCR](https://github.com/GaudiLabs/qPocketPCR) リポジトリと同じライセンスです。
