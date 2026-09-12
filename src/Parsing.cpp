@@ -247,3 +247,127 @@ void loadProtocol()
   Serial.printf("loadProtocol: from USB disk (%d bytes)\n", myConfig.length());
   parseConfig(myConfig);
 }
+
+// ================= Named protocol library =================
+// Protocols are stored as text files PROTO_01.txt, PROTO_02.txt ... on SPIFFS.
+// PROTOLIST.TXT keeps "id:name" lines so the builder UI can list and reload them.
+
+static String protoFileName(int id)
+{
+  char buf[16];
+  snprintf(buf, sizeof(buf), "/PROTO_%02d.txt", id);
+  return String(buf);
+}
+
+// Find the highest existing protocol id (scans PROTOLIST.TXT).
+static int maxProtoId()
+{
+  File f = SPIFFS.open("/PROTOLIST.TXT", FILE_READ);
+  if (!f) return 0;
+  int mx = 0;
+  String line;
+  while (f.available()) {
+    line = f.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0) continue;
+    int colon = line.indexOf(':');
+    if (colon > 0) {
+      int id = line.substring(0, colon).toInt();
+      if (id > mx) mx = id;
+    }
+  }
+  f.close();
+  return mx;
+}
+
+void saveNamedProtocol(String name, String text)
+{
+  name.trim();
+  if (name.length() == 0) name = "Unnamed";
+
+  int nextId = maxProtoId() + 1;
+  if (nextId > 99) {
+    Serial.println("saveNamedProtocol: too many protocols (max 99)");
+    return;
+  }
+
+  // Write the protocol text file.
+  File pf = SPIFFS.open(protoFileName(nextId), FILE_WRITE);
+  if (!pf) {
+    Serial.println("saveNamedProtocol: failed to open protocol file for writing");
+    return;
+  }
+  pf.print(text);
+  pf.close();
+
+  // Update the management list. Overwrite an existing line, else append.
+  File lf = SPIFFS.open("/PROTOLIST.TXT", FILE_READ);
+  String content = "";
+  if (lf) {
+    content = lf.readString();
+    lf.close();
+  }
+  String newLine = String(nextId) + ":" + name;
+  bool replaced = false;
+  String out = "";
+  String line;
+  // Split on both \n and \r\n.
+  while (content.length() > 0) {
+    int nl = content.indexOf('\n');
+    String l;
+    if (nl >= 0) { l = content.substring(0, nl); content = content.substring(nl + 1); }
+    else { l = content; content = ""; }
+    // strip trailing \r
+    if (l.length() > 0 && l[l.length() - 1] == '\r') l.remove(l.length() - 1);
+    if (!replaced) {
+      int colon = l.indexOf(':');
+      if (colon > 0 && l.substring(0, colon).toInt() == nextId) {
+        out += newLine + "\n";
+        replaced = true;
+        continue;
+      }
+    }
+    out += l + "\n";
+  }
+  if (!replaced) out += newLine + "\n";
+
+  File lf2 = SPIFFS.open("/PROTOLIST.TXT", FILE_WRITE);
+  if (lf2) { lf2.print(out); lf2.close(); }
+
+  Serial.printf("saveNamedProtocol: saved id=%d \"%s\" (%d bytes)\n", nextId, name.c_str(), text.length());
+}
+
+String listProtocols()
+{
+  String out = "";
+  File f = SPIFFS.open("/PROTOLIST.TXT", FILE_READ);
+  if (!f) return out;
+  String line;
+  while (f.available()) {
+    line = f.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0) continue;
+    int colon = line.indexOf(':');
+    if (colon > 0) {
+      String id = line.substring(0, colon);
+      String nm = line.substring(colon + 1);
+      out += id + "|" + nm + "\n";
+    }
+  }
+  f.close();
+  return out;
+}
+
+bool loadProtocolById(int id, String &outText)
+{
+  File f = SPIFFS.open(protoFileName(id), FILE_READ);
+  if (!f) {
+    Serial.printf("loadProtocolById: id=%d not found\n", id);
+    return false;
+  }
+  outText = f.readString();
+  f.close();
+  parseConfig(outText);
+  Serial.printf("loadProtocolById: loaded id=%d (%d bytes)\n", id, outText.length());
+  return true;
+}

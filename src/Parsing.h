@@ -33,3 +33,11 @@ typedef struct ProtocolType
 extern ProtocolType pcrProtocol;
 
 void loadProtocol();
+
+// --- Named protocol library (save / load list) ---
+// Protocols are stored as text files PROTO_01.txt, PROTO_02.txt ... on SPIFFS.
+// A management file PROTOLIST.TXT keeps "id:name" lines so the builder UI can
+// show a list of saved protocols and reload one by id.
+void saveNamedProtocol(String name, String text);   // append/overwrite a named protocol
+String listProtocols();                              // newline-separated "id|name" lines
+bool loadProtocolById(int id, String &outText);      // parse into pcrProtocol; return raw text

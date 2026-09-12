@@ -81,6 +81,17 @@
 
   <!-- Actions -->
   <section>
+    <h2>Saved Protocols</h2>
+    <div class="actions">
+      <select id="protoList" size="1" style="max-width:320px;"></select>
+      <button class="ghost" id="loadProtoBtn">Load</button>
+      <span class="status" id="protoStatus"></span>
+    </div>
+    <p style="font-size:12px;color:#555;margin:8px 0 0;">名前をつけて保存しておき、一覧から読み込めます。</p>
+  </section>
+
+  <!-- Actions -->
+  <section>
     <h2>Save &amp; Upload</h2>
     <div class="actions">
       <button class="primary" id="saveBtn">Save Protocol as PROTOCOL.TXT</button>
@@ -327,8 +338,113 @@
   });
   document.getElementById("saveBtn").addEventListener("click", function(){
     downloadProtocol();
+    // Also save to the device's named protocol library (reuses #name).
+    var name = document.getElementById("name").value.trim();
+    fetchProtoSave(name);
     var url = document.getElementById("deviceUrl").value.trim();
     if (url) uploadToDevice(url);
+  });
+
+  // ---------- saved-protocol library ----------
+  function fillProtoList(listText){
+    var sel = document.getElementById("protoList");
+    sel.innerHTML = "";
+    var lines = listText.split("\n");
+    var any = false;
+    for (var i=0;i<lines.length;i++){
+      var line = lines[i].trim();
+      if (!line) continue;
+      var pipe = line.indexOf("|");
+      if (pipe < 0) continue;
+      var id = line.substring(0, pipe);
+      var nm = line.substring(pipe + 1);
+      var opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = "#" + id + "  " + nm;
+      sel.appendChild(opt);
+      any = true;
+    }
+    if (!any) {
+      var opt0 = document.createElement("option");
+      opt0.textContent = "(no saved protocols yet)";
+      opt0.disabled = true;
+      sel.appendChild(opt0);
+    }
+  }
+
+  function loadProtoList(){
+    fetch("/listproto")
+      .then(function(r){ return r.text(); })
+      .then(function(t){ fillProtoList(t); });
+  }
+
+  // Repopulate the whole form from raw protocol text.
+  function parseProtocolText(text){
+    var lines = text.split(/\r?\n/);
+    for (var i=0;i<lines.length;i++){
+      var l = lines[i].trim();
+      if (l.indexOf("NAME:") === 0) { document.getElementById("name").value = l.substring(5).trim(); }
+      else if (l.indexOf("CYCLES:") === 0) { document.getElementById("cycles").value = l.substring(7).trim(); }
+      else if (l.indexOf("REPEAT:") === 0) {
+        var rest = l.substring(7);
+        var dash = rest.indexOf("-");
+        if (dash >= 0){ document.getElementById("repeatStart").value = rest.substring(0,dash).trim(); document.getElementById("repeatEnd").value = rest.substring(dash+1).trim(); }
+      } else if (l.indexOf("MELT FROM:") === 0) { document.getElementById("meltFrom").value = l.substring(10).trim(); }
+      else if (l.indexOf("MELT TO:") === 0) { document.getElementById("meltTo").value = l.substring(8).trim(); }
+      else if (l.indexOf("MELT INC:") === 0) { document.getElementById("meltInc").value = l.substring(9).trim(); }
+      else if (l.indexOf("MELT HOLD:") === 0) { document.getElementById("meltHold").value = l.substring(10).trim(); }
+    }
+    // Parse STEP blocks into the steps array.
+    var newSteps = [];
+    var cur = null;
+    for (var j=0;j<lines.length;j++){
+      var s = lines[j];
+      var mStep = s.match(/^STEP\s+\d+:\s*(.*)/);
+      if (mStep){ cur = { name: mStep[1].trim(), temp:72, dur:30, unit:"sec", capture:false }; newSteps.push(cur); continue; }
+      if (!cur) continue;
+      var mt = s.match(/TEMPERATURE:\s*([-\d.]+)/i);
+      if (mt){ cur.temp = parseFloat(mt[1]); }
+      var md = s.match(/DURATION:\s*([-\d.]+)/i);
+      if (md){ cur.dur = parseFloat(md[1]); }
+      var mu = /min/i.test(s) ? "min" : "sec";
+      if (mu === "min") cur.unit = "min";
+      if (/CAPTURE/i.test(s)) cur.capture = true;
+    }
+    if (newSteps.length > 0) steps = newSteps;
+  }
+
+  function fetchProtoSave(name){
+    var status = document.getElementById("protoStatus");
+    var nm = name || "Protocol";
+    var text = buildProtocolText();
+    var fd = new FormData();
+    fd.append("name", nm);
+    fd.append("protocol", new Blob([text], {type:"text/plain"}), "PROTOCOL.TXT");
+    fetch("/saveproto", { method:"POST", body:fd })
+      .then(function(r){ return r.text().then(function(t){ return {ok:r.ok, t:t}; }); })
+      .then(function(res){
+        if (res.ok) { fillProtoList(res.t); status.textContent = "Saved \"" + nm + "\" to device library."; }
+        else { status.textContent = "Save failed"; }
+      })
+      .catch(function(e){ status.textContent = "Save error: " + e.message; });
+  }
+
+  document.getElementById("loadProtoBtn").addEventListener("click", function(){
+    var sel = document.getElementById("protoList");
+    var id = sel.value;
+    if (!id) { document.getElementById("protoStatus").textContent = "Select a protocol first."; return; }
+    fetch("/loadproto?id=" + encodeURIComponent(id))
+      .then(function(r){ return r.text().then(function(t){ return {ok:r.ok, t:t}; }); })
+      .then(function(res){
+        if (res.ok) {
+          parseProtocolText(res.t);
+          renderSteps(); renderChart(); updatePreview();
+          document.getElementById("protoStatus").textContent = "Loaded #" + id;
+        } else {
+          document.getElementById("protoStatus").textContent = "Load failed: " + res.t;
+        }
+      })
+      .catch(function(e){ document.getElementById("protoStatus").textContent = "Load error: " + e.message; });
   });
 
   // live-update when melt fields change too
@@ -343,6 +459,7 @@
   renderSteps();
   renderChart();
   updatePreview();
+  loadProtoList();
   window.addEventListener("resize", renderChart);
 })();
 </script>

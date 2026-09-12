@@ -518,6 +518,9 @@ delay(2000);
   server.on("/stop", handleStop);
   server.on("/download", handleDownload);
   server.on("/upload", HTTP_POST, handleUploadDone, handleUpload);
+  server.on("/listproto", handleListProtocols);
+  server.on("/loadproto", handleLoadProtocol);
+  server.on("/saveproto", HTTP_POST, handleSaveProtocol);
   server.begin();
   Serial.println("Web server started on port 80");
 
@@ -2447,4 +2450,46 @@ void handleUpload() {
 
 void handleUploadDone() {
   server.send(200, "text/plain", "Upload complete");
+}
+
+// --- Named protocol library: return list of saved protocols ---
+// Response format: newline-separated "id|name" lines.
+void handleListProtocols() {
+  String list = listProtocols();
+  if (list.length() == 0) {
+    server.send(200, "text/plain", "No saved protocols");
+    return;
+  }
+  server.send(200, "text/plain", list);
+}
+
+// --- Named protocol library: load one by id and parse it into pcrProtocol ---
+// Returns the raw protocol text so the builder UI can repopulate its form.
+void handleLoadProtocol() {
+  String arg = server.arg("id");
+  int id = arg.toInt();
+  if (id < 1) {
+    server.send(400, "text/plain", "Invalid id");
+    return;
+  }
+  String text;
+  if (!loadProtocolById(id, text)) {
+    server.send(404, "text/plain", "Protocol not found");
+    return;
+  }
+  server.send(200, "text/plain", text);
+}
+
+// --- Named protocol library: save the current builder form as a named protocol ---
+void handleSaveProtocol() {
+  String name = server.arg("name");
+  String text = server.arg("protocol");
+  if (text.length() == 0) {
+    server.send(400, "text/plain", "No protocol data");
+    return;
+  }
+  saveNamedProtocol(name, text);
+  // Return the updated list so the UI can refresh.
+  String list = listProtocols();
+  server.send(200, "text/plain", list);
 }
