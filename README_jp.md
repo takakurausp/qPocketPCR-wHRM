@@ -221,7 +221,7 @@ SPIFFS は不揮発性ファイルを持ちます：
 - `scripts/make_calibration.py` — 希釈系列から較定ファイルを生成
 - `scripts/qpcr_core.py` — コアライブラリ（ベースライン、Ct、標準カーブ、融解解析）
 
-eDNA qPCR のワークフロー全体・設定形式・HRM/Tm の詳細は [`analysis/README.md`](analysis/README.md) を参照してください。
+eDNA qPCR のワークフロー全体・設定形式・HRM/Tm の詳細は [`analysis/README_jp.md`](analysis/README_jp.md) を参照してください。
 
 ## ビルド
 
