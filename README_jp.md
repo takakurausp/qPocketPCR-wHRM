@@ -57,8 +57,7 @@ MELT ステップはリピート領域の後に内部 `steps[]` 配列に展開�
 | `/stop` | 現在走査の停止を要求 |
 | `/download` | `DATAQPCR.TXT` をファイル添付としてダウンロード |
 | `/upload`（POST, multipart） | 新しい `PROTOCOL.TXT` をアップロード |
-
-### プロトコルビルダー（`/builder`）
+> **⚠️ 日本の電波法に関する注意**> 本ファームウェアのWiFi（アクセスポイント）機能は、日本の電波法の認証を受けていません。> 日本国内でWiFiを使用する場合、またはRF発射を避ける場合は、ビルド時にWiFiを無効にして書き込んでください。> ### WiFi を無効にしてビルドする> ソースコードのデフォルトは `WIFI_ENABLED=1`（WiFi有効・現状と同じ動作）です。> 日本国内向けには `-DWIFI_ENABLED=0` でビルドすると、setup()で `WiFi.softAP()` が呼ばれず> WiFi/Webサーバーが無効になります（RAM/Flash使用量も減少します）。> ```bash> PLATFORMIO_BUILD_FLAGS="-DWIFI_ENABLED=0" pio run -e esp32_s2_usb_native> ```> PlatformIOの `platformio.ini` に `-DWIFI_ENABLED=0` を追加する方法と同様です。> 無効化済みファームウェア（v0.1）は本リポジトリのReleaseからダウンロードできます。### プロトコルビルダー（`/builder`）
 
 ファームウェアに組み込まれたシングルページのWebアプリで、以下ができます：
 

@@ -9,6 +9,15 @@
 #include "USB_DRIVE.h"
 #include "Parsing.h"
 
+// WiFi / Web Server 有効化フラグ
+//   デフォルト = 1 （公開ソースでは現状どおり WiFi AP + Web サーバーが有効）
+//   日本の電波法の認証を受けていないため、日本国内で使用するには
+//   ビルド時に -DWIFI_ENABLED=0 を指定し WiFi を無効にして書き込んでください。
+//   (PlatformIO: platformio.ini の build_flags に "-DWIFI_ENABLED=0" を追加)
+#ifndef WIFI_ENABLED
+#define WIFI_ENABLED 1
+#endif
+
 #include <WiFi.h>
 #include <WebServer.h>
 
@@ -504,6 +513,7 @@ delay(2000);
 
   drawMainDisplay();
 
+#if WIFI_ENABLED
   // WiFi AP モード開始
   WiFi.softAP(ap_ssid, ap_password);
   wifiEnabled = true;
@@ -525,6 +535,11 @@ delay(2000);
   server.on("/saveproto", HTTP_POST, handleSaveProtocol);
   server.begin();
   Serial.println("Web server started on port 80");
+#else
+  // WIFI_ENABLED=0: WiFi/AP/Web サーバーは無効（電波法対応）
+  wifiEnabled = false;
+  Serial.println("WiFi disabled (WIFI_ENABLED=0)");
+#endif
 
 } // setup
 
