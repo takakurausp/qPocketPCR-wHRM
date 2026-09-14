@@ -312,6 +312,11 @@ WebServer server(80);
 const char* ap_ssid = "qPocketPCR";
 const char* ap_password = "12345678";
 bool wifiEnabled = false;
+
+// Current startup mode. 0 = disabled (WIFI_ENABLED=0), 1 = access point, 2 = client.
+int wifiMode = 0;
+// IP address string for the active WiFi interface (client or AP). Empty when disabled.
+String wifiIP = "";
 bool stopRequested = false;
 
 
@@ -636,8 +641,11 @@ delay(2000);
 
     if (WiFi.status() == WL_CONNECTED) {
       wifiEnabled = true;
+      wifiMode = 2; // client mode
+      String ipStr = WiFi.localIP().toString();
+      wifiIP = ipStr;
       Serial.print("WiFi client connected. IP: ");
-      Serial.println(WiFi.localIP());
+      Serial.println(ipStr);
 
       // In client mode we can reach the internet, so sync the RTC via NTP and
       // stamp every file on the virtual USB drive with the current UTC time.
@@ -657,10 +665,13 @@ delay(2000);
     WiFi.mode(WIFI_AP_STA);
     WiFi.softAP(ap_ssid, ap_password);
     wifiEnabled = true;
+    wifiMode = 1; // access point mode
+    String ipStr = WiFi.softAPIP().toString();
+    wifiIP = ipStr;
     Serial.print("WiFi AP started: ");
     Serial.println(ap_ssid);
     Serial.print("IP: ");
-    Serial.println(WiFi.softAPIP());
+    Serial.println(ipStr);
   }
 
   // Web サーバーハンドラ登録 (works in both Client and AP mode)
@@ -679,9 +690,12 @@ delay(2000);
 #else
   // WIFI_ENABLED=0: WiFi/AP/Web サーバーは無効（電波法対応）
   wifiEnabled = false;
+  wifiMode = 0; // disabled
   Serial.println("WiFi disabled (WIFI_ENABLED=0)");
 #endif
 
+  // Display the current WiFi startup mode on screen.
+  draw_WIFI_display();
 } // setup
 
 // ==================== MAIN LOOP ====================

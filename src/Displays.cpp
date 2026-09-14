@@ -46,6 +46,10 @@ extern int PCR_Times[5];
 extern float PCR_Temperatures[5];
 extern int PCR_Cycles;
 
+// WiFi startup mode and IP, defined in the main sketch (.ino).
+extern int wifiMode;       // 0 = disabled, 1 = access point, 2 = client
+extern String wifiIP;      // active interface IP (empty when disabled)
+
 bool PointInRect(TS_Point point, int x, int y, int h, int v)
 
 {
@@ -454,6 +458,57 @@ void drawInitUSBDisplay()
 
  
   }
+
+
+// Show the current WiFi startup mode (and IP address for client/AP) on screen.
+void draw_WIFI_display()
+{
+  tft.fillRect(0, 0, 320, 240, TFT_WHITE);
+
+  // Title bar
+  tft.setTextColor(TFT_WHITE, TFT_BUTTONGREY);
+  tft.setTextDatum(MC_DATUM);
+  tft.setFreeFont(&neuropol10pt7b);
+  tft.drawString("WiFi Mode", 160, 25);
+
+  tft.drawLine(0, 40, 320, 40, TFT_BLACK);
+  tft.drawLine(0, 41, 320, 41, TFT_BLACK);
+
+  // Body text
+  tft.setTextColor(TFT_BLACK, TFT_WHITE);
+  tft.setFreeFont(&GaudiSans7pt7b);
+  tft.setTextDatum(TL_DATUM);
+
+  int y = 80;
+  const int lineH = 42;
+
+  if (wifiMode == 0) {
+    // WiFi disabled (WIFI_ENABLED=0 / radio-law build)
+    tft.drawString("Mode: Disabled", 30, y);
+    tft.drawString("(WiFi/AP/Web server off)", 30, y + lineH);
+    tft.drawString("No IP address assigned.", 30, y + lineH * 2);
+  } else if (wifiMode == 1) {
+    // Access Point mode
+    tft.drawString("Mode: Access Point", 30, y);
+    tft.drawString("SSID: qPocketPCR", 30, y + lineH);
+    tft.drawString("IP: " + wifiIP, 30, y + lineH * 2);
+    tft.drawString("Connect to configure.", 30, y + lineH * 3);
+  } else if (wifiMode == 2) {
+    // Client mode
+    tft.drawString("Mode: Client", 30, y);
+    tft.drawString("IP: " + wifiIP, 30, y + lineH);
+    tft.drawString("Connected to AP.", 30, y + lineH * 2);
+    tft.drawString("NTP time sync active.", 30, y + lineH * 3);
+  }
+
+  // Back hint button at the bottom
+  tft.fillRoundRect(95, 185, 130, 45, 12, TFT_BUTTONGREY);
+  tft.setTextColor(TFT_WHITE, TFT_BUTTONGREY);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString("OK", 160, 207);
+
+  tft.setTextDatum(TL_DATUM);
+}
 
 
 void drawBaselineDisplay()
