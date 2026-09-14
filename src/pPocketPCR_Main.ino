@@ -2201,7 +2201,7 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
 <body>
 <header>
   <h1>qPocketPCR Protocol Builder</h1>
-  <a href="/">&#8592; トップへ戻る</a>
+  <a href="/">&#8592; Back to Home</a>
 </header>
 
 <div class="wrap">
@@ -2217,8 +2217,8 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
       <div><label>Repeat To Step</label><input type="number" id="repeatEnd" value="4" min="1"></div>
     </div>
     <div class="actions" style="margin-top:10px;">
-      <label style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" id="ampToggle" checked> PCR増幅（REPEAT/CYCLES＋ステップ）</label>
-      <label style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" id="meltToggle" checked> 融解曲線（HRM/MELT）</label>
+      <label style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" id="ampToggle" checked> PCR amplification (REPEAT/CYCLES + steps)</label>
+      <label style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" id="meltToggle" checked> Melting curve (HRM/MELT)</label>
     </div>
   </section>
 
@@ -2235,7 +2235,7 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
   <!-- HRM / MELT block -->
   <section class="hrm">
     <h2>Melt (HRM) Block &nbsp;<span class="chip" id="meltPoints">0 points</span></h2>
-    <p style="font-size:12px;color:#555;margin:0 0 10px;">PCR後に細かな温度ランプを行い、各ポイントで蛍光を取得します。CYCLES:0 にすると MELT のみ実行できます。</p>
+    <p style="font-size:12px;color:#555;margin:0 0 10px;">Runs a fine temperature ramp with fluorescence capture at each point. Set CYCLES to 0 for an HRM-only run.</p>
     <div class="grid">
       <div><label>MELT FROM (°C)</label><input type="number" id="meltFrom" value="65" step="0.1"></div>
       <div><label>MELT TO (°C)</label><input type="number" id="meltTo" value="95" step="0.1"></div>
@@ -2255,7 +2255,7 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
     <div style="margin-top:12px;" class="device">
       <label style="margin:0;">Upload to device:</label>
       <input type="text" id="deviceUrl" placeholder="http://192.168.4.1/" style="max-width:200px;" value="">
-      <span class="chip" id="uploadHint">SAVE は PROTOCOL.TXT をダウンロードします</span>
+      <span class="chip" id="uploadHint">SAVE downloads PROTOCOL.TXT</span>
     </div>
   </section>
 
@@ -2502,7 +2502,7 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
     var totalSteps = steps.length + mp;
     var warn = document.getElementById("meltWarn");
     if (!ampOn){
-      warn.textContent = "PCR増幅オフ → HRMのみ実行（CYCLES/MELTは単発で走査されます）。";
+      warn.textContent = "PCR amplification off \u2192 HRM-only run (CYCLES/MELT execute once).";
     } else if (totalSteps > 200){
       warn.textContent = "\u26a0 Total steps ("+totalSteps+") exceed MAX_STEPS=200. Melt ramp will be truncated to "+(200-steps.length)+" points.";
     } else {
