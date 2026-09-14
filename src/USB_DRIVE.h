@@ -1,4 +1,5 @@
 #include "SPIFFS.h"
+#include <time.h>   // time_t, gmtime_r for FAT directory-entry timestamps
 
 #define FAT_U8(v) ((v) & 0xFF)
 #define FAT_U16(v) FAT_U8(v), FAT_U8((v) >> 8)
@@ -41,8 +42,18 @@ static const uint16_t DISC_SECTORS_PER_TABLE = 1; //each table sector can fit 17
 extern char wifi_config_ssid[65];      // result of reading WIFI.TXT (max 64 chars)
 extern char wifi_config_password[65];  // result of reading WIFI.TXT (max 64 chars)
 
+// Global device time in seconds since the Unix epoch (UTC). Set by NTP sync when
+// running in WiFi client mode. When this is >0, FAT directory-entry timestamps are
+// stamped with the current UTC time; otherwise they keep their template defaults.
+extern volatile time_t g_deviceEpoch;
+
 void readWifiConfig();                 // parse WIFI.TXT from the USB disk image
 void createWifiConfigTemplate();       // add an empty WIFI.TXT template if missing
+
+// Stamp every regular-file directory entry (PROTOCOL / WIFI / DATAQPCR) with the
+// current UTC time derived from g_deviceEpoch. No-op when g_deviceEpoch <= 0, so
+// AP mode and WiFi-disabled builds keep their fixed template timestamps.
+void applyNtpTimestamps();
 
 static bool onStartStop(uint8_t power_condition, bool start, bool load_eject);
 static int32_t onRead(uint32_t lba, uint32_t offset, void* buffer, uint32_t bufsize);

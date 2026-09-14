@@ -19,6 +19,10 @@ USBCDC USBSerial;
   boolean shoudSave=false;
   boolean initialize_Disk=false;
 
+// Device time in seconds since the Unix epoch (UTC). Set by NTP sync when running
+// in WiFi client mode. <=0 means "no reliable clock" -> keep template timestamps.
+volatile time_t g_deviceEpoch = 0;
+
 unsigned long saveTime;
 
 
@@ -291,6 +295,9 @@ static inline uint8_t* getRootDirEntryPtr(int entryIndex)
   return &msc_disk[sector][offset];
 }
 
+// Forward declaration: stamp a FAT12 directory-entry timestamp from a Unix epoch.
+static void setEntryTimestamp(uint8_t* entry, time_t epoch);
+
 // Find directory entry index in root directory (0..MAX_ROOT_DIR_ENTRIES-1)
 // Returns entry index or -1 if not found
 static int findRootDirEntry(const char* name8)
@@ -481,6 +488,8 @@ void addFileToFAT(fs::FS &fs, String path){
      entry[29] = FAT_U8(i >> 8);
      entry[30] = FAT_U8(i >> 16);
      entry[31] = FAT_U8(i >> 24);
+     // Stamp last-modified time with the current device clock (no-op if unset).
+     setEntryTimestamp(entry, g_deviceEpoch);
    }
 
    buildFatTable();
@@ -504,6 +513,8 @@ void addProtoToFAT(String str){
      entry[29] = FAT_U8(str_length >> 8);
      entry[30] = FAT_U8(str_length >> 16);
      entry[31] = FAT_U8(str_length >> 24);
+     // Stamp last-modified time with the current device clock (no-op if unset).
+     setEntryTimestamp(entry, g_deviceEpoch);
    }
 
    buildFatTable();
@@ -533,6 +544,8 @@ void addStringToFAT(String str){
      entry[29] = FAT_U8(newSize >> 8);
      entry[30] = FAT_U8(newSize >> 16);
      entry[31] = FAT_U8(newSize >> 24);
+     // Stamp last-modified time with the current device clock (no-op if unset).
+     setEntryTimestamp(entry, g_deviceEpoch);
    }
 
    buildFatTable();
@@ -900,6 +913,45 @@ void createWifiConfigTemplate()
   }
 
   buildFatTable();
+}
+
+// Write a FAT12 directory-entry timestamp (standard layout) from a Unix epoch time.
+//   byte[4]  = creation tenths of second
+//   byte[5..6]  = creation time (hms packed)
+//   byte[7..8]  = creation date (ymd packed)
+//   byte[9..10] = last access date (ymd packed)
+//   byte[11..12] = last modification time (hms packed)
+//   byte[13..14] = last modification date (ymd packed)
+static void setEntryTimestamp(uint8_t* entry, time_t epoch)
+{
+  if (epoch <= 0) return;   // no reliable clock -> keep template timestamp
+  struct tm tmbuf;
+  struct tm* ptm = gmtime_r(&epoch, &tmbuf);
+  if (!ptm) return;
+
+  int tenths = (ptm->tm_sec % 10) * 10;   // FAT stores only the tens digit of seconds
+  entry[4]  = FAT_U8(tenths);
+  entry[5]  = FAT_HMS2B(ptm->tm_hour, ptm->tm_min, ptm->tm_sec);
+  entry[7]  = FAT_YMD2B(ptm->tm_year + 1900, ptm->tm_mon + 1, ptm->tm_mday);
+  entry[9]  = FAT_YMD2B(ptm->tm_year + 1900, ptm->tm_mon + 1, ptm->tm_mday);
+  entry[11] = FAT_HMS2B(ptm->tm_hour, ptm->tm_min, ptm->tm_sec);
+  entry[13] = FAT_YMD2B(ptm->tm_year + 1900, ptm->tm_mon + 1, ptm->tm_mday);
+}
+
+// Stamp every regular-file directory entry (PROTOCOL / WIFI / DATAQPCR) with the
+// current UTC time derived from g_deviceEpoch. No-op when g_deviceEpoch <= 0, so
+// AP mode and WiFi-disabled builds keep their fixed template timestamps.
+void applyNtpTimestamps()
+{
+  if (g_deviceEpoch <= 0) return;
+
+  for (int i = 0; i < MAX_ROOT_DIR_ENTRIES; i++) {
+    uint8_t* entry = getRootDirEntryPtr(i);
+    if (!entry[0]) break;                 // end of directory
+    if (entry[0] == 0xE5) continue;       // deleted slot
+    if ((entry[11] & 0x18) != 0) continue;// skip volume label / directories
+    setEntryTimestamp(entry, g_deviceEpoch);
+  }
 }
 
 void Start_USB_Drive()

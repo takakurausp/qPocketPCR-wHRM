@@ -19,6 +19,7 @@
 #endif
 
 #include <WiFi.h>
+#include <WiFiUdp.h>
 #include <WebServer.h>
 
 #define sensor_t camera_sensor_t
@@ -316,6 +317,102 @@ bool stopRequested = false;
 
 // ==================== SETUP ====================
 
+// Fetch the current UTC time from an NTP server. Only used when running in WiFi
+// client mode (g_deviceEpoch stays 0 otherwise, so FAT timestamps keep their
+// template defaults). Returns true on success and stores seconds-since-epoch in
+// g_deviceEpoch. Uses a single UDP packet to pool.ntp.org with no external deps.
+static bool fetchNtpTime()
+{
+  const char* ntpHost = "pool.ntp.org";
+  const uint16_t ntpPort = 123;
+  const uint32_t pollIntervalSec = 3600;
+
+  // NTP timestamp: 64-bit fixed-point seconds since 1900-01-01.
+  struct udp_packet {
+    uint8_t  lp[48];
+  } packet;
+
+  memset(&packet, 0, sizeof(packet));
+  packet.lp[0] = 0x1B; // mode 3 (client), version 3
+
+  const uint32_t ntpEpochOffset = 2208988800UL; // 1970-01-01 minus 1900-01-01
+  struct timeval tvNow;
+  gettimeofday(&tvNow, NULL);
+  uint32_t secondsSince1900 = (uint32_t)tvNow.tv_sec + ntpEpochOffset;
+  memcpy(&packet.lp[40], &secondsSince1900, 4);
+
+  WiFiUDP udp;
+  if (udp.begin(ntpPort) != 1) { Serial.println("NTP: UDP begin failed"); return false; }
+
+  uint32_t startMillis = millis();
+  bool gotReply = false;
+  while (millis() - startMillis < 4000) {
+    esp_task_wdt_reset();
+    if (udp.beginPacket(ntpHost, ntpPort)) {
+      udp.write(packet.lp, sizeof(packet));
+      int err = udp.endPacket();
+      if (err == 1) { gotReply = true; break; }
+    }
+    delay(50);
+  }
+  if (!gotReply) { Serial.println("NTP: no reply"); udp.stop(); return false; }
+
+  startMillis = millis();
+  while (millis() - startMillis < 4000) {
+    esp_task_wdt_reset();
+    int len = udp.parsePacket();
+    if (len >= 48) {
+      uint8_t buf[48];
+      udp.read(buf, sizeof(buf));
+      udp.stop();
+
+      // Verify server reply: version and mode fields in byte 0.
+      uint8_t vm = buf[0];
+      if ((vm & 0xE0) != 0x00 || (buf[0] & 0x07) == 0) {
+        Serial.println("NTP: bad version/mode"); return false;
+      }
+
+      // Transmit timestamp is at bytes 40..43.
+      uint32_t txSeconds = ((uint32_t)buf[40] << 24) | ((uint32_t)buf[41] << 16)
+                         | ((uint32_t)buf[42] << 8)  | (uint32_t)buf[43];
+      if (txSeconds == 0) { Serial.println("NTP: zero tx time"); return false; }
+
+      // Estimate local clock offset from round-trip time.
+      struct timeval rxNow;
+      gettimeofday(&rxNow, NULL);
+      uint32_t rxSince1900 = (uint32_t)rxNow.tv_sec + ntpEpochOffset;
+
+      // RTT: (rx - tx) sent by server + (now - rxSent) locally. We approximate
+      // using the server's (rx-tx) plus a small local correction.
+      uint32_t rtt = (rxSince1900 - txSeconds); // rough, positive when clock ahead
+      int32_t offsetSec = 0;
+      if (rtt > 0 && rtt < 600) {
+        // server reported (rx - tx); local elapsed since send is small -> use half.
+        uint32_t localElapsed = (uint32_t)(rxNow.tv_sec - tvNow.tv_sec);
+        offsetSec = (int32_t)((rxSince1900 - txSeconds) / 2) - localElapsed;
+      }
+
+      time_t epoch = (time_t)txSeconds - ntpEpochOffset + offsetSec;
+      if (epoch > 0) {
+        g_deviceEpoch = epoch;
+        struct tm tmbuf;
+        struct tm* ptm = gmtime_r(&epoch, &tmbuf);
+        if (ptm) {
+          Serial.printf("NTP synced: %04d-%02d-%02d %02d:%02d:%02d UTC\n",
+                        ptm->tm_year + 1900, ptm->tm_mon + 1, ptm->tm_mday,
+                        ptm->tm_hour, ptm->tm_min, ptm->tm_sec);
+        }
+        return true;
+      }
+    }
+    delay(50);
+  }
+  Serial.println("NTP: timeout waiting for reply");
+  udp.stop();
+  return false;
+}
+
+
 void setup() {
 
 // Initialize WDT with 5 second timeout, reset on trigger
@@ -541,6 +638,14 @@ delay(2000);
       wifiEnabled = true;
       Serial.print("WiFi client connected. IP: ");
       Serial.println(WiFi.localIP());
+
+      // In client mode we can reach the internet, so sync the RTC via NTP and
+      // stamp every file on the virtual USB drive with the current UTC time.
+      if (fetchNtpTime()) {
+        applyNtpTimestamps();
+      } else {
+        Serial.println("NTP failed - files keep default timestamps");
+      }
     } else {
       // Could not connect - fall back to Access Point mode below.
       Serial.println("WiFi client connection failed, using Access Point mode");
