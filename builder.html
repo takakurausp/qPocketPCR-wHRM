@@ -279,7 +279,7 @@
     // repeats how many times (mirrors the original PocketPCR builder).
     if (ampOn && n > 1){
       var lo = Math.max(1, rs) - 1;   // 0-based index of first repeated step
-      var hi = Math.min(n-1, re);     // 0-based index of last repeated step
+      var hi = Math.min(n-1, re - 1); // 0-based index of last repeated step (re is 1-based)
       if (lo >= 0 && hi >= lo){
         var bx1 = xFor(lo), bx2 = xFor(hi);
         var band=document.createElementNS(svgNS,"rect");
