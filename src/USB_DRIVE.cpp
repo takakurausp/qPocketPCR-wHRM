@@ -136,8 +136,8 @@ FAT_TBL2B(0x2B, 0xFFF),
     FAT_U32(0),
     
  
-    // second entry is readme file
-    'P' , 'R' , 'O' , 'T' , 'O' , 'C' , 'O' , 'L' ,//file_name[8]; padded with spaces (0x20)
+    // second entry is PROTOCOL.TXT
+    'P' , 'R' , 'O' , 'T' , 'O' , 'C' , 'O' , 'L',//file_name[8]; padded with spaces (0x20)
     'T' , 'X' , 'T' ,     //file_extension[3]; padded with spaces (0x20)
     0x20,                 //file attributes: FILE_ATTR_ARCHIVE
     0x00,                 //ignore
@@ -148,12 +148,28 @@ FAT_TBL2B(0x2B, 0xFFF),
     FAT_U16(0),           //extended_attributes
     FAT_HMS2B(12,0,0),    //last_modified_hms: 12:00:00
     FAT_YMD2B(2037,1,1),  //last_modified_ymd: 2037-01-01
-    FAT_U16(2),           //start of file in cluster
+    FAT_U16(2),           //start of file in cluster (PROTOCOL)
     FAT_U32(sizeof(PROTOCOL_TEMPLATE)-1), //file size
 
 
-       // second entry is readme file
-    'D' , 'A' , 'T' , 'A' , 'Q' , 'P' , 'C' , 'R' ,//file_name[8]; padded with spaces (0x20)
+    // third entry is WIFI.TXT (WiFi configuration template)
+    'W' , 'I' , 'F' , 'I' , '.' , 'T' , 'X' , 'T',//file_name[8]
+    0x20,                 //file_extension[3]; padded with spaces (0x20)
+    0x20,                 //file attributes: FILE_ATTR_ARCHIVE
+    0x00,                 //ignore
+    FAT_MS2B(1,980),      //creation_time_10_ms
+    FAT_HMS2B(12,0,0),    //create_time_hms: 12:00:00
+    FAT_YMD2B(2037,1,1),  //create_time_ymd: 2037-01-01 (FAR FUTURE)
+    FAT_YMD2B(2037,1,1),  //last_access_ymd: 2037-01-01
+    FAT_U16(0),           //extended_attributes
+    FAT_HMS2B(12,0,0),    //last_modified_hms: 12:00:00
+    FAT_YMD2B(2037,1,1),  //last_modified_ymd: 2037-01-01
+    FAT_U16(WIFI_TXT_START_CLUSTER), //start of file in cluster (WIFI.TXT)
+    FAT_U32(sizeof(WIFI_TEMPLATE)-1), //file size
+
+
+    // fourth entry is DATAQPCR.TXT (moved after WIFI.TXT)
+    'D' , 'A' , 'T' , 'A' , 'Q' , 'P' , 'C' , 'R',//file_name[8]; padded with spaces (0x20)
     'T' , 'X' , 'T' ,     //file_extension[3]; padded with spaces (0x20)
     0x20,                 //file attributes: FILE_ATTR_ARCHIVE
     0x00,                 //ignore
@@ -164,10 +180,10 @@ FAT_TBL2B(0x2B, 0xFFF),
     FAT_U16(0),           //extended_attributes
     FAT_HMS2B(12,0,0),    //last_modified_hms: 12:00:00
     FAT_YMD2B(2037,1,1),  //last_modified_ymd: 2037-01-01
-    FAT_U16(DATAQPCR_START_CLUSTER), //start of file in cluster
+    FAT_U16(DATAQPCR_START_CLUSTER), //start of file in cluster (DATAQPCR)
     FAT_U32(0), //file size
-    
-      
+
+
 
   },
 
@@ -376,7 +392,23 @@ void buildFatTable()
     }
   }
 
-  // 2. Allocate clusters for DATAQPCR.TXT if present, according to its actual size
+  // 2. Allocate clusters for WIFI.TXT if present (fixed capacity, not size-based)
+  int wifiIdx = findRootDirEntry("WIFI");
+  if (wifiIdx >= 0) {
+    uint8_t* entry = getRootDirEntryPtr(wifiIdx);
+    uint16_t startCluster = entry[26] | (entry[27] << 8);
+
+    if (startCluster == WIFI_TXT_START_CLUSTER &&
+        startCluster < DATAQPCR_START_CLUSTER - 1) {
+      int clusters = DATAQPCR_START_CLUSTER - WIFI_TXT_START_CLUSTER; // fixed 8 clusters
+      for (int i = 0; i < clusters - 1; i++) {
+        setFat12Entry(startCluster + i, startCluster + i + 1);
+      }
+      setFat12Entry(startCluster + clusters - 1, 0xFFF);
+    }
+  }
+
+  // 3. Allocate clusters for DATAQPCR.TXT if present, according to its actual size
   int dataIdx = findRootDirEntry("DATAQPCR");
   if (dataIdx >= 0) {
     uint8_t* entry = getRootDirEntryPtr(dataIdx);
@@ -705,6 +737,169 @@ static void usbEventCallback(void* arg, esp_event_base_t event_base, int32_t eve
         break;
     }
   }
+}
+
+
+// ================= WIFI.TXT configuration (USB disk) =================
+// The host PC edits WIFI.TXT on the virtual USB drive. It is an INI-style file:
+//   NAME: <free text, ignored by firmware>
+//   SSID=<your access point name>
+//   PASSWORD=<your access point password>
+// If both SSID and PASSWORD are non-empty AND the device can connect to that
+// AP, it boots in Client mode. Otherwise (empty fields or connection failed)
+// it falls back to Access Point mode. When no WIFI.TXT exists yet, a template
+// with empty SSID/PASSWORD is created so the user has something to edit.
+
+char wifi_config_ssid[65]      = {0};   // max 64 chars + NUL
+char wifi_config_password[65]  = {0};   // max 64 chars + NUL
+
+// Read a single "KEY=value" line from buf into out (trailing \r stripped).
+// Surrounding whitespace around key and value is trimmed so that lines such as
+// "SSID = MyHome" work the same as "SSID=MyHome".
+static void parseWifiLine(const char* buf, String& key, String& value)
+{
+  char* eq = strchr(buf, '=');
+  if (eq == NULL) { key = ""; value = ""; return; }
+  int len = eq - buf;
+  String k = String(buf).substring(0, len);
+  String v = String(buf).substring(len + 1);
+
+  // Trim leading/trailing spaces and tabs from the key.
+  int ks = 0, ke = k.length();
+  while (ks < ke && (k[ks] == ' ' || k[ks] == '\t')) ks++;
+  while (ke > ks && (k[ke-1] == ' ' || k[ke-1] == '\t')) ke--;
+  key = k.substring(ks, ke - ks);
+
+  // Trim leading/trailing spaces and tabs from the value.
+  int vs = 0, ve = v.length();
+  while (vs < ve && (v[vs] == ' ' || v[vs] == '\t')) vs++;
+  while (ve > vs && (v[ve-1] == ' ' || v[ve-1] == '\t')) ve--;
+  value = v.substring(vs, ve - vs);
+
+  // Strip trailing CR/LF from the value.
+  while (value.length() > 0 && (value[value.length()-1] == '\r' || value[value.length()-1] == '\n'))
+    value.remove(value.length() - 1);
+}
+
+// Parse WIFI.TXT content from the USB disk image into wifi_config_ssid / password.
+void readWifiConfig()
+{
+  wifi_config_ssid[0]      = '\0';
+  wifi_config_password[0]  = '\0';
+
+  int wifiIdx = findRootDirEntry("WIFI");
+  if (wifiIdx < 0) {
+    // No WIFI.TXT yet - caller will create a template.
+    return;
+  }
+
+  uint8_t* entry = getRootDirEntryPtr(wifiIdx);
+  int config_length = entry[28] | (entry[29] << 8);
+  int config_cluster = entry[26] | (entry[27] << 8);
+
+  // Capacity of the WIFI.TXT region is fixed.
+  int maxConfigLength = (DATAQPCR_START_CLUSTER - WIFI_TXT_START_CLUSTER) * DISK_SECTOR_SIZE;
+  if (config_length > maxConfigLength) config_length = maxConfigLength;
+  if (config_length <= 0) return;
+
+  // Read the whole file content into a temporary buffer.
+  char buf[DATAQPCR_START_CLUSTER * DISK_SECTOR_SIZE];
+  int total = 0;
+  int cluster = config_cluster;
+  while (total < maxConfigLength && cluster >= 2 && cluster < DISK_SECTOR_COUNT) {
+    uint8_t* ptr = &msc_disk[CLUSTER_TO_SECTOR(cluster)][0];
+    int chunk = DISK_SECTOR_SIZE;
+    if (total + chunk > maxConfigLength) chunk = maxConfigLength - total;
+    memcpy(buf + total, ptr, chunk);
+    total += chunk;
+    if (cluster == WIFI_TXT_START_CLUSTER) break; // single-cluster file
+    cluster = extract12BitNumber(cluster);
+    if (cluster >= 0xFF8) break;
+  }
+  buf[total] = '\0';
+
+  // Parse KEY=value lines.
+  String line, key, value;
+  int pos = 0;
+  while (pos < total) {
+    char* nl = (char*)memchr(buf + pos, '\n', total - pos);
+    if (nl == NULL) { nl = buf + total; } else { *nl = '\0'; nl = buf + (nl - buf); }
+    line = String(buf + pos);
+    parseWifiLine(line.c_str(), key, value);
+    if (key.equalsIgnoreCase("SSID")) {
+      strncpy(wifi_config_ssid, value.c_str(), sizeof(wifi_config_ssid) - 1);
+      wifi_config_ssid[sizeof(wifi_config_ssid) - 1] = '\0';
+    } else if (key.equalsIgnoreCase("PASSWORD")) {
+      strncpy(wifi_config_password, value.c_str(), sizeof(wifi_config_password) - 1);
+      wifi_config_password[sizeof(wifi_config_password) - 1] = '\0';
+    }
+    pos += nl - (buf + pos); // advance past this line
+  }
+}
+
+// Create an empty WIFI.TXT template in the USB disk image if one does not exist.
+void createWifiConfigTemplate()
+{
+  int wifiIdx = findRootDirEntry("WIFI");
+  if (wifiIdx >= 0) {
+    // Existing file - keep it as-is.
+    return;
+  }
+
+  // Find a free directory slot (first zero byte).
+  int freeSlot = -1;
+  for (int i = 0; i < MAX_ROOT_DIR_ENTRIES; i++) {
+    uint8_t* e = getRootDirEntryPtr(i);
+    if (e[0] == 0x00) { freeSlot = i; break; }
+  }
+  if (freeSlot < 0) return; // no room
+
+  uint8_t* entry = getRootDirEntryPtr(freeSlot);
+  memset(entry, 0, 32);
+  memcpy(entry, "WIFI.TXT", 8);   // bytes 0-7: filename
+  entry[11] = 0x20;              // byte 11: attributes (archive)
+
+  // Timestamps / dates (FAT_YMD2B/FAT_HMS2B each emit two bytes).
+  entry[4]  = FAT_U8(1980);      // creation time low (placeholder)
+  entry[5]  = FAT_HMS2B(12,0,0); // create_time_hms
+  entry[6]  = FAT_YMD2B(2037,1,1);// create_time_ymd
+  entry[7]  = FAT_YMD2B(2037,1,1);// last_access_ymd
+  entry[8]  = 0;                 // extended attributes (high byte of start cluster)
+  entry[9]  = FAT_HMS2B(12,0,0); // last_modified_hms
+  entry[10] = FAT_YMD2B(2037,1,1);// last_modified_ymd
+
+  // Start cluster (bytes 26-27) and file size (bytes 28-31).
+  entry[26] = FAT_U8(WIFI_TXT_START_CLUSTER);
+  entry[27] = 0;
+  const char* tmpl = WIFI_TEMPLATE;
+  int tlen = strlen(tmpl);
+  entry[28] = FAT_U8(tlen);
+  entry[29] = FAT_U8(tlen >> 8);
+  entry[30] = FAT_U8(tlen >> 16);
+  entry[31] = FAT_U8(tlen >> 24);
+
+  // Write template content into the WIFI.TXT cluster.
+  uint8_t* c = &msc_disk[CLUSTER_TO_SECTOR(WIFI_TXT_START_CLUSTER)][0];
+  memset(c, 0, DISK_SECTOR_SIZE);
+  memcpy(c, tmpl, tlen);
+
+  // If an old disk image (pre-WIFI.TXT layout) is present, its DATAQPCR.TXT
+  // directory entry still points at cluster DATAQPCR_START_CLUSTER-8 (the old
+  // first data cluster). Shift it forward by the WIFI.TXT region width so the
+  // two files do not collide. buildFatTable() then rebuilds the FAT chains.
+  int dataIdx = findRootDirEntry("DATAQPCR");
+  if (dataIdx >= 0) {
+    uint8_t* de = getRootDirEntryPtr(dataIdx);
+    uint16_t oldStart = de[26] | (de[27] << 8);
+    int shift = DATAQPCR_START_CLUSTER - WIFI_TXT_START_CLUSTER; // 8 clusters
+    if (oldStart == DATAQPCR_START_CLUSTER - shift) {
+      de[26] = FAT_U8(WIFI_TXT_START_CLUSTER + shift);
+      de[27] = 0;
+      Serial.println("WIFI.TXT: migrated old DATAQPCR.TXT cluster offset");
+    }
+  }
+
+  buildFatTable();
 }
 
 void Start_USB_Drive()

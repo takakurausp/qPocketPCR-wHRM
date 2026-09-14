@@ -514,15 +514,51 @@ delay(2000);
   drawMainDisplay();
 
 #if WIFI_ENABLED
-  // WiFi AP モード開始
-  WiFi.softAP(ap_ssid, ap_password);
-  wifiEnabled = true;
-  Serial.print("WiFi AP started: ");
-  Serial.println(ap_ssid);
-  Serial.print("IP: ");
-  Serial.println(WiFi.softAPIP());
+  // ---- WiFi: Client mode (if a valid config exists) or Access Point mode ----
+  // Read the configuration file from the virtual USB drive. If it does not
+  // exist yet, create an empty template so the user has something to edit on
+  // the host PC. The file is "WIFI.TXT" with lines:
+  //   SSID=<access point name>
+  //   PASSWORD=<access point password>
+  readWifiConfig();
+  createWifiConfigTemplate();
 
-  // Web サーバーハンドラ登録
+  bool haveCredentials = (wifi_config_ssid[0] != '\0' && wifi_config_password[0] != '\0');
+
+  if (haveCredentials) {
+    // Try to connect as a WiFi client to the configured access point.
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(wifi_config_ssid, wifi_config_password);
+
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 40) {
+      delay(250);
+      esp_task_wdt_reset();
+      attempts++;
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+      wifiEnabled = true;
+      Serial.print("WiFi client connected. IP: ");
+      Serial.println(WiFi.localIP());
+    } else {
+      // Could not connect - fall back to Access Point mode below.
+      Serial.println("WiFi client connection failed, using Access Point mode");
+    }
+  }
+
+  if (!wifiEnabled) {
+    // Access Point mode (default).
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(ap_ssid, ap_password);
+    wifiEnabled = true;
+    Serial.print("WiFi AP started: ");
+    Serial.println(ap_ssid);
+    Serial.print("IP: ");
+    Serial.println(WiFi.softAPIP());
+  }
+
+  // Web サーバーハンドラ登録 (works in both Client and AP mode)
   server.on("/", handleRoot);
   server.on("/builder", handleBuilder);
   server.on("/status", handleStatus);

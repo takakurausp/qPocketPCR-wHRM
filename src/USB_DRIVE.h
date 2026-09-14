@@ -23,10 +23,26 @@ static const uint16_t DISC_SECTORS_PER_TABLE = 1; //each table sector can fit 17
 #define CLUSTER_TO_SECTOR(c) (FIRST_DATA_SECTOR + (c) - 2)
 
 // Layout of the pre-allocated (chained) files on the FAT12 disk.
+//   PROTOCOL.TXT    : running protocol (editable by host, parsed at boot)
+//   WIFI.TXT        : WiFi configuration (SSID/PASSWORD). Only present when the
+//                     user has created it or when the firmware creates a template.
+//   DATAQPCR.TXT    : raw measurement data (largest file)
 #define PROTOCOL_START_CLUSTER 2
-#define PROTOCOL_END_CLUSTER 31          // PROTOCOL.TXT capacity: 15 KB (adjust here to trade space with DATAQPCR.TXT)
-#define DATAQPCR_START_CLUSTER (PROTOCOL_END_CLUSTER + 1)
+#define PROTOCOL_END_CLUSTER 31          // PROTOCOL.TXT capacity: 15 KB
+#define WIFI_TXT_START_CLUSTER (PROTOCOL_END_CLUSTER + 1)   // WIFI.TXT capacity: 4 KB (fixed)
+#define DATAQPCR_START_CLUSTER (WIFI_TXT_START_CLUSTER + 8) // DATAQPCR.TXT starts after WIFI.TXT
 #define DATAQPCR_START_SECTOR  CLUSTER_TO_SECTOR(DATAQPCR_START_CLUSTER)
+
+// Template written into WIFI.TXT when no configuration file exists yet.
+// SSID and PASSWORD are left empty so the user fills them in on a host PC.
+// If either is empty, the device boots in Access Point mode.
+#define WIFI_TEMPLATE "NAME: WiFi Configuration\nSSID=\nPASSWORD="
+
+extern char wifi_config_ssid[65];      // result of reading WIFI.TXT (max 64 chars)
+extern char wifi_config_password[65];  // result of reading WIFI.TXT (max 64 chars)
+
+void readWifiConfig();                 // parse WIFI.TXT from the USB disk image
+void createWifiConfigTemplate();       // add an empty WIFI.TXT template if missing
 
 static bool onStartStop(uint8_t power_condition, bool start, bool load_eject);
 static int32_t onRead(uint32_t lba, uint32_t offset, void* buffer, uint32_t bufsize);
