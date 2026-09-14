@@ -2216,6 +2216,10 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
       <div><label>Repeat From Step</label><input type="number" id="repeatStart" value="2" min="1"></div>
       <div><label>Repeat To Step</label><input type="number" id="repeatEnd" value="4" min="1"></div>
     </div>
+    <div class="actions" style="margin-top:10px;">
+      <label style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" id="ampToggle" checked> PCR増幅（REPEAT/CYCLES＋ステップ）</label>
+      <label style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" id="meltToggle" checked> 融解曲線（HRM/MELT）</label>
+    </div>
   </section>
 
   <!-- Steps -->
@@ -2288,35 +2292,46 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
     var re = parseInt(document.getElementById("repeatEnd").value,10) || 1;
     if (re < rs) re = rs;
 
+    // Toggle: PCR amplification block (REPEAT/CYCLES + STEP lines).
+    // When off -> HRM-only protocol (no REPEAT/CYCLES/STEP lines at all).
+    var ampOn = document.getElementById("ampToggle").checked;
+    // Toggle: MELT / HRM ramp. When off -> amplification-only protocol.
+    var meltOn = document.getElementById("meltToggle").checked;
+
     var lines = [];
     lines.push("NAME: " + name);
     if (dateStr) lines.push(" DATE: " + dateStr);
     lines.push("");
-    lines.push(" PROTOCOL: ");
-    lines.push("  ");
-    lines.push(" REPEAT: " + rs + "-" + re);
-    lines.push(" CYCLES: " + cycles);
-    lines.push("");
 
-    for (var i=0;i<steps.length;i++){
-      var s = steps[i];
-      lines.push(" STEP " + (i+1) + ": " + s.name);
-      lines.push("    TEMPERATURE: " + s.temp + "\u00b0C");
-      lines.push("    DURATION: " + fmtDuration(s.dur, s.unit));
-      if (s.capture) lines.push("    CAPTURE: yes");
-      lines.push("    ");
+    if (ampOn){
+      lines.push(" PROTOCOL: ");
+      lines.push("  ");
+      lines.push(" REPEAT: " + rs + "-" + re);
+      lines.push(" CYCLES: " + cycles);
+      lines.push("");
+
+      for (var i=0;i<steps.length;i++){
+        var s = steps[i];
+        lines.push(" STEP " + (i+1) + ": " + s.name);
+        lines.push("    TEMPERATURE: " + s.temp + "\u00b0C");
+        lines.push("    DURATION: " + fmtDuration(s.dur, s.unit));
+        if (s.capture) lines.push("    CAPTURE: yes");
+        lines.push("    ");
+      }
     }
 
-    // MELT block
-    var mf = parseFloat(document.getElementById("meltFrom").value);
-    var mt = parseFloat(document.getElementById("meltTo").value);
-    var mi = parseFloat(document.getElementById("meltInc").value);
-    var mh = parseInt(document.getElementById("meltHold").value,10) || 1;
-    if (!isNaN(mf) && !isNaN(mt) && !isNaN(mi) && mi > 0){
-      lines.push(" MELT FROM: " + mf.toFixed(1));
-      lines.push(" MELT TO: " + mt.toFixed(1));
-      lines.push(" MELT INC: " + mi);
-      lines.push(" MELT HOLD: " + mh);
+    // MELT block (HRM ramp). Only emitted when the HRM toggle is on.
+    if (meltOn){
+      var mf = parseFloat(document.getElementById("meltFrom").value);
+      var mt = parseFloat(document.getElementById("meltTo").value);
+      var mi = parseFloat(document.getElementById("meltInc").value);
+      var mh = parseInt(document.getElementById("meltHold").value,10) || 1;
+      if (!isNaN(mf) && !isNaN(mt) && !isNaN(mi) && mi > 0){
+        lines.push(" MELT FROM: " + mf.toFixed(1));
+        lines.push(" MELT TO: " + mt.toFixed(1));
+        lines.push(" MELT INC: " + mi);
+        lines.push(" MELT HOLD: " + mh);
+      }
     }
 
     return lines.join("\n") + "\n";
@@ -2406,12 +2421,50 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
     var xFor = function(i){ return padL + (n===1?usableW/2:(i/(n-1))*usableW); };
     var yFor = function(t){ return padB + (H-padB-8)*((tmax-t)/(tmax-tmin)); };
 
+    // Cycle-range highlight bar (like the original PocketPCR builder):
+    // shade the horizontal band behind steps repeatStart..repeatEnd and
+    // show "N×" so it is obvious which range repeats how many times.
+    var rs = parseInt(document.getElementById("repeatStart").value,10) || 1;
+    var re = parseInt(document.getElementById("repeatEnd").value,10) || 1;
+    var cycles = parseInt(document.getElementById("cycles").value,10) || 0;
+    var ampOn = document.getElementById("ampToggle").checked;
+
     // baseline line
     var svgNS="http://www.w3.org/2000/svg";
     var svg=document.createElementNS(svgNS,"svg");
     svg.setAttribute("width",W); svg.setAttribute("height",H);
     svg.setAttribute("viewBox","0 0 "+W+" "+H);
     svg.style.width="100%"; svg.style.height="150px";
+
+    // Cycle-range highlight band: shade the horizontal band behind the steps
+    // in [repeatStart, repeatEnd] and draw "N×" so it is obvious which range
+    // repeats how many times (mirrors the original PocketPCR builder).
+    if (ampOn && n > 1){
+      var lo = Math.max(1, rs) - 1;   // 0-based index of first repeated step
+      var hi = Math.min(n-1, re);     // 0-based index of last repeated step
+      if (lo >= 0 && hi >= lo){
+        var bx1 = xFor(lo), bx2 = xFor(hi);
+        var band=document.createElementNS(svgNS,"rect");
+        band.setAttribute("x", Math.min(bx1,bx2));
+        band.setAttribute("y", padB);
+        band.setAttribute("width", Math.abs(bx2-bx1));
+        band.setAttribute("height", H-padB-8);
+        band.setAttribute("fill","#2f6fb0");
+        band.setAttribute("opacity","0.10");
+        svg.appendChild(band);
+
+        var mid = (Math.min(bx1,bx2)+Math.max(bx1,bx2))/2;
+        var label=document.createElementNS(svgNS,"text");
+        label.setAttribute("x", mid);
+        label.setAttribute("y", H-4);
+        label.setAttribute("font-size","13");
+        label.setAttribute("text-anchor","middle");
+        label.setAttribute("fill","#2f6fb0");
+        label.setAttribute("font-weight","bold");
+        label.textContent = cycles + "× ("+rs+"-"+re+")";
+        svg.appendChild(label);
+      }
+    }
 
     var base=document.createElementNS(svgNS,"line");
     base.setAttribute("x1",padL); base.setAttribute("y1",H-padB);
@@ -2444,10 +2497,13 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
   function updatePreview(){
     document.getElementById("preview").textContent = buildProtocolText();
     var mp = meltPointCount();
+    var ampOn = document.getElementById("ampToggle").checked;
     document.getElementById("meltPoints").textContent = mp + " point" + (mp===1?"":"s");
     var totalSteps = steps.length + mp;
     var warn = document.getElementById("meltWarn");
-    if (totalSteps > 200){
+    if (!ampOn){
+      warn.textContent = "PCR増幅オフ → HRMのみ実行（CYCLES/MELTは単発で走査されます）。";
+    } else if (totalSteps > 200){
       warn.textContent = "\u26a0 Total steps ("+totalSteps+") exceed MAX_STEPS=200. Melt ramp will be truncated to "+(200-steps.length)+" points.";
     } else {
       warn.textContent = "";
@@ -2496,6 +2552,11 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
   // live-update when melt fields change too
   ["meltFrom","meltTo","meltInc","meltHold"].forEach(function(id){
     document.getElementById(id).addEventListener("input", updatePreview);
+  });
+
+  // Re-render chart/preview when the PCR / HRM toggles change.
+  ["ampToggle","meltToggle"].forEach(function(id){
+    document.getElementById(id).addEventListener("change", function(){ renderChart(); updatePreview(); });
   });
 
   // default date = today

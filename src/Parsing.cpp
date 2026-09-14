@@ -151,6 +151,16 @@ void parseConfig(String InputStream)
 
     getSteps(InputStream);
 
+    // If there are no STEP lines but a MELT block is present, this is an
+    // HRM-only protocol. The state machine below expects at least one step to
+    // run; set repeatStart/repeatEnd so the (melt-expanded) steps execute
+    // exactly once without cycling.
+    if (pcrProtocol.stepCount == 0 && InputStream.indexOf("MELT") != -1)
+    {
+      pcrProtocol.repeatStart = 1;
+      pcrProtocol.repeatEnd   = 1;
+    }
+
     // ---- MELT (High Resolution Melting) ----
     // A PROTOCOL.TXT may append a MELT block after the normal steps to run a
     // fine temperature ramp with fluorescence capture at every point, e.g.:
