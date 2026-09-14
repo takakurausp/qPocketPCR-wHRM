@@ -133,7 +133,7 @@
 
 #define MASK_THRESHOLD 40
 
-#define MAX_MEASUREMENTS 400
+#define MAX_MEASUREMENTS 512
 
 #define SAFETY_MIN_TEMP 5
 #define SAFETY_MAX_TEMP 130
@@ -2493,6 +2493,10 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
     c.appendChild(svg);
   }
 
+  // Firmware limit for total protocol steps / capture measurements.
+  // Kept in sync with MAX_STEPS (Parsing.h) and MAX_MEASUREMENTS (main).
+  const MAX_STEPS_LIMIT = 512;
+
   // ---------- preview + melt warn ----------
   function updatePreview(){
     document.getElementById("preview").textContent = buildProtocolText();
@@ -2503,8 +2507,8 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
     var warn = document.getElementById("meltWarn");
     if (!ampOn){
       warn.textContent = "PCR amplification off \u2192 HRM-only run (CYCLES/MELT execute once).";
-    } else if (totalSteps > 200){
-      warn.textContent = "\u26a0 Total steps ("+totalSteps+") exceed MAX_STEPS=200. Melt ramp will be truncated to "+(200-steps.length)+" points.";
+    } else if (totalSteps > MAX_STEPS_LIMIT){
+      warn.textContent = "\u26a0 Total steps ("+totalSteps+") exceed MAX_STEPS="+MAX_STEPS_LIMIT+". Melt ramp will be truncated to "+(MAX_STEPS_LIMIT-steps.length)+" points.";
     } else {
       warn.textContent = "";
     }
