@@ -2472,12 +2472,24 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
     base.setAttribute("stroke","#d7dbe0"); base.setAttribute("stroke-width","1");
     svg.appendChild(base);
 
-    // polyline
-    var pts = steps.map(function(s,i){ return xFor(i)+","+yFor(s.temp); }).join(" ");
-    var poly=document.createElementNS(svgNS,"polyline");
-    poly.setAttribute("points",pts);
-    poly.setAttribute("fill","none"); poly.setAttribute("stroke","#2f6fb0"); poly.setAttribute("stroke-width","2.5");
-    svg.appendChild(poly);
+    // staircase path — each step is a horizontal plateau at its set temperature,
+    // matching the original qPocketPCR builder style (not a straight polyline).
+    var pts = [];
+    if (n === 1) {
+      pts.push("M "+padL+","+yFor(steps[0].temp));
+      pts.push("L "+(W-4)+","+yFor(steps[0].temp));
+    } else {
+      pts.push("M "+xFor(0)+","+yFor(steps[0].temp));
+      for (var i = 0; i < n - 1; i++) {
+        var xEnd = (i === n - 2) ? W - 4 : xFor(i+1);
+        pts.push("L "+xEnd+","+yFor(steps[i].temp));   // horizontal plateau at step i level
+        pts.push("L "+xEnd+","+yFor(steps[i+1].temp));  // vertical jump to next level
+      }
+    }
+    var path=document.createElementNS(svgNS,"path");
+    path.setAttribute("d",pts.join(" "));
+    path.setAttribute("fill","none"); path.setAttribute("stroke","#2f6fb0"); path.setAttribute("stroke-width","2.5"); path.setAttribute("stroke-linejoin","round");
+    svg.appendChild(path);
 
     steps.forEach(function(s,i){
       var c=document.createElementNS(svgNS,"circle");
