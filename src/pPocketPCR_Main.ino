@@ -2409,99 +2409,175 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
   function renderChart(){
     var c = document.getElementById("profileChart");
     c.innerHTML = "";
-    var W = c.clientWidth || (c.parentElement.clientWidth - 40);
-    if (W < 100) W = 300;
-    var H = 150, padL=28, padB=16;
     var n = steps.length;
     if (!n){ c.textContent="Add a step to preview the temperature profile."; return; }
-    var temps = steps.map(function(s){return s.temp;});
-    var tmin = Math.min.apply(null,temps), tmax = Math.max.apply(null,temps);
-    var span = (tmax-tmin)||10; tmin-=span*0.15; tmax+=span*0.15;
-    var usableW = W - padL - 10;
-    var xFor = function(i){ return padL + (n===1?usableW/2:(i/(n-1))*usableW); };
-    var yFor = function(t){ return padB + (H-padB-8)*((tmax-t)/(tmax-tmin)); };
 
-    // Cycle-range highlight bar (like the original PocketPCR builder):
-    // shade the horizontal band behind steps repeatStart..repeatEnd and
-    // show "N×" so it is obvious which range repeats how many times.
+    // Fixed logical canvas (matches original qPocketPCR builder look).
+    var svgW = 840, svgH = 360;
+    var margin = { top:60, right:40, bottom:65, left:65 };
+    var plotW = svgW - margin.left - margin.right;
+    var plotH = svgH - margin.top - margin.bottom;
+
+    // Responsive sizing: fill container width, keep 840:360 aspect ratio.
+    var W = c.clientWidth || (c.parentElement.clientWidth - 40);
+    if (W < 200) W = 320;
+    var H = Math.round(W * svgH / svgW);
+
+    // Fixed temperature scale 0..105 C (absolute, like a thermal cycler).
+    var minT = 0, maxT = 105;
+    function getY(t){
+      var cl = Math.max(minT, Math.min(maxT, t));
+      return margin.top + plotH - ((cl - minT)/(maxT - minT)) * plotH;
+    }
+
+    var svgNS = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("viewBox", "0 0 " + svgW + " " + svgH);
+    svg.style.width = W + "px"; svg.style.height = H + "px";
+
+    // Background panel
+    var bg = document.createElementNS(svgNS, "rect");
+    bg.setAttribute("width", svgW); bg.setAttribute("height", svgH); bg.setAttribute("fill", "#ffffff"); bg.setAttribute("rx", 12);
+    svg.appendChild(bg);
+
+    // Title: Protocol: [name]   Date: [date]
+    var name = document.getElementById("name").value || "Protocol name";
+    var dateEl = document.getElementById("date");
+    var dateStr = dateEl.value ? formatDate(new Date(dateEl.value)) : "";
+    var title = document.createElementNS(svgNS, "text");
+    title.setAttribute("x", svgW/2); title.setAttribute("y", 30);
+    title.setAttribute("text-anchor", "middle");
+    title.setAttribute("font-size", "14"); title.setAttribute("font-weight", "600"); title.setAttribute("fill", "#334155");
+    title.textContent = "Protocol: " + name + "   Date: " + dateStr;
+    svg.appendChild(title);
+
+    // Horizontal gridlines + Y-axis temperature labels (0,20,...,100)
+    var yTicks = [0,20,40,60,80,100];
+    for (var t=0; t<yTicks.length; t++){
+      var gy = getY(yTicks[t]);
+      var gl = document.createElementNS(svgNS, "line");
+      gl.setAttribute("x1", margin.left); gl.setAttribute("y1", gy);
+      gl.setAttribute("x2", svgW - margin.right); gl.setAttribute("y2", gy);
+      gl.setAttribute("stroke", "#f1f5f9"); gl.setAttribute("stroke-width", "1.5");
+      svg.appendChild(gl);
+      var lt = document.createElementNS(svgNS, "text");
+      lt.setAttribute("x", margin.left - 10); lt.setAttribute("y", gy + 4);
+      lt.setAttribute("text-anchor", "end"); lt.setAttribute("font-size", "11");
+      lt.setAttribute("fill", "#94a3b8");
+      lt.textContent = yTicks[t] + "\u00b0C";
+      svg.appendChild(lt);
+    }
+
+    // Step slots (each step occupies one slot across the plot width).
+    var stepCount = Math.max(1, n);
+    var stepW = plotW / stepCount;
+    function xFor(i){ return margin.left + i * stepW; }
+
+    // Baseline (pre-run room temp ~20C) then staircase through each step.
+    var pathD = "M " + (margin.left - 25) + " " + getY(20) + " L " + margin.left + " " + getY(20);
+    for (var i=0; i<n; i++){
+      var xS = xFor(i), xE = xFor(i+1);
+      var y = getY(steps[i].temp);
+      pathD += " L " + xS + " " + y;   // vertical rise to set temp
+      pathD += " L " + xE + " " + y;   // horizontal hold
+    }
+    var profile = document.createElementNS(svgNS, "path");
+    profile.setAttribute("d", pathD);
+    profile.setAttribute("fill", "none");
+    profile.setAttribute("stroke", "#7c3aed");
+    profile.setAttribute("stroke-width", "3");
+    profile.setAttribute("stroke-linejoin", "round");
+    profile.setAttribute("stroke-linecap", "round");
+    svg.appendChild(profile);
+
+    // Per-step guides + labels
+    for (var i=0; i<n; i++){
+      var xS = xFor(i), xE = xFor(i+1);
+      var y = getY(steps[i].temp);
+      var xc = (xS + xE) / 2;
+
+      // vertical guide between steps
+      if (i > 0){
+        var gd = document.createElementNS(svgNS, "line");
+        gd.setAttribute("x1", xS); gd.setAttribute("y1", margin.top);
+        gd.setAttribute("x2", xS); gd.setAttribute("y2", margin.top + plotH);
+        gd.setAttribute("stroke", "#e2e8f0"); gd.setAttribute("stroke-width", "1");
+        gd.setAttribute("stroke-dasharray", "3,3");
+        svg.appendChild(gd);
+      }
+
+      // step number (top)
+      var sn = document.createElementNS(svgNS, "text");
+      sn.setAttribute("x", xc); sn.setAttribute("y", margin.top - 12);
+      sn.setAttribute("text-anchor", "middle"); sn.setAttribute("font-size", "13");
+      sn.setAttribute("font-weight", "700"); sn.setAttribute("fill", "#475569");
+      sn.textContent = (i+1);
+      svg.appendChild(sn);
+
+      // temperature label (above line)
+      var tt = document.createElementNS(svgNS, "text");
+      tt.setAttribute("x", xc); tt.setAttribute("y", y - 10);
+      tt.setAttribute("text-anchor", "middle"); tt.setAttribute("font-size", "12");
+      tt.setAttribute("font-weight", "700"); tt.setAttribute("fill", "#1e293b");
+      tt.textContent = steps[i].temp + "\u00b0C";
+      svg.appendChild(tt);
+
+      // capture marker (double-ring target) below line when on
+      if (steps[i].capture){
+        var cg = document.createElementNS(svgNS, "g");
+        cg.setAttribute("transform", "translate(" + xc + ", " + (y + 24) + ")");
+        var c1 = document.createElementNS(svgNS, "circle");
+        c1.setAttribute("cx", 0); c1.setAttribute("cy", 0); c1.setAttribute("r", 10);
+        c1.setAttribute("fill", "#ffffff"); c1.setAttribute("stroke", "#475569"); c1.setAttribute("stroke-width", "2");
+        cg.appendChild(c1);
+        var c2 = document.createElementNS(svgNS, "circle");
+        c2.setAttribute("cx", 0); c2.setAttribute("cy", 0); c2.setAttribute("r", 5);
+        c2.setAttribute("fill", "#334155");
+        cg.appendChild(c2);
+        var c3 = document.createElementNS(svgNS, "circle");
+        c3.setAttribute("cx", 0); c3.setAttribute("cy", 0); c3.setAttribute("r", 2);
+        c3.setAttribute("fill", "#ffffff");
+        cg.appendChild(c3);
+        svg.appendChild(cg);
+      }
+
+      // duration label (bottom)
+      var du = steps[i].unit === "min" ? "min" : "sec";
+      var dt = document.createElementNS(svgNS, "text");
+      dt.setAttribute("x", xc); dt.setAttribute("y", svgH - margin.bottom + 42);
+      dt.setAttribute("text-anchor", "middle"); dt.setAttribute("font-size", "11");
+      dt.setAttribute("font-weight", "500"); dt.setAttribute("fill", "#64748b");
+      dt.textContent = steps[i].dur + " " + du;
+      svg.appendChild(dt);
+    }
+
+    // Repeat bar (bottom) showing cycle count over the repeat range.
     var rs = parseInt(document.getElementById("repeatStart").value,10) || 1;
     var re = parseInt(document.getElementById("repeatEnd").value,10) || 1;
     var cycles = parseInt(document.getElementById("cycles").value,10) || 0;
     var ampOn = document.getElementById("ampToggle").checked;
-
-    // baseline line
-    var svgNS="http://www.w3.org/2000/svg";
-    var svg=document.createElementNS(svgNS,"svg");
-    svg.setAttribute("width",W); svg.setAttribute("height",H);
-    svg.setAttribute("viewBox","0 0 "+W+" "+H);
-    svg.style.width="100%"; svg.style.height="150px";
-
-    // Cycle-range highlight band: shade the horizontal band behind the steps
-    // in [repeatStart, repeatEnd] and draw "N×" so it is obvious which range
-    // repeats how many times (mirrors the original PocketPCR builder).
     if (ampOn && n > 1){
-      var lo = Math.max(1, rs) - 1;   // 0-based index of first repeated step
-      var hi = Math.min(n-1, re - 1); // 0-based index of last repeated step (re is 1-based)
-      if (lo >= 0 && hi >= lo){
-        var bx1 = xFor(lo), bx2 = xFor(hi);
-        var band=document.createElementNS(svgNS,"rect");
-        band.setAttribute("x", Math.min(bx1,bx2));
-        band.setAttribute("y", padB);
-        band.setAttribute("width", Math.abs(bx2-bx1));
-        band.setAttribute("height", H-padB-8);
-        band.setAttribute("fill","#2f6fb0");
-        band.setAttribute("opacity","0.10");
-        svg.appendChild(band);
-
-        var mid = (Math.min(bx1,bx2)+Math.max(bx1,bx2))/2;
-        var label=document.createElementNS(svgNS,"text");
-        label.setAttribute("x", mid);
-        label.setAttribute("y", H-4);
-        label.setAttribute("font-size","13");
-        label.setAttribute("text-anchor","middle");
-        label.setAttribute("fill","#2f6fb0");
-        label.setAttribute("font-weight","bold");
-        label.textContent = cycles + "× ("+rs+"-"+re+")";
-        svg.appendChild(label);
+      var rFrom = Math.max(1, rs), rTo = Math.min(n, re);
+      if (rFrom <= rTo){
+        var rxS = xFor(rFrom - 1) + 2;
+        var rxE = xFor(rTo) - 2;
+        if (rxE > rxS){
+          var barY = svgH - margin.bottom + 10;
+          var br = document.createElementNS(svgNS, "rect");
+          br.setAttribute("x", rxS); br.setAttribute("y", barY);
+          br.setAttribute("width", rxE - rxS); br.setAttribute("height", 14);
+          br.setAttribute("rx", 4); br.setAttribute("fill", "#a855f7");
+          svg.appendChild(br);
+          var bl = document.createElementNS(svgNS, "text");
+          bl.setAttribute("x", (rxS + rxE)/2); bl.setAttribute("y", barY + 11);
+          bl.setAttribute("text-anchor", "middle"); bl.setAttribute("font-size", "11");
+          bl.setAttribute("font-weight", "700"); bl.setAttribute("fill", "#ffffff");
+          bl.textContent = cycles + "\u00d7";
+          svg.appendChild(bl);
+        }
       }
     }
 
-    var base=document.createElementNS(svgNS,"line");
-    base.setAttribute("x1",padL); base.setAttribute("y1",H-padB);
-    base.setAttribute("x2",W-4); base.setAttribute("y2",H-padB);
-    base.setAttribute("stroke","#d7dbe0"); base.setAttribute("stroke-width","1");
-    svg.appendChild(base);
-
-    // staircase path — each step is a horizontal plateau at its set temperature,
-    // matching the original qPocketPCR builder style (not a straight polyline).
-    var pts = [];
-    if (n === 1) {
-      pts.push("M "+padL+","+yFor(steps[0].temp));
-      pts.push("L "+(W-4)+","+yFor(steps[0].temp));
-    } else {
-      pts.push("M "+xFor(0)+","+yFor(steps[0].temp));
-      for (var i = 0; i < n - 1; i++) {
-        var xEnd = (i === n - 2) ? W - 4 : xFor(i+1);
-        pts.push("L "+xEnd+","+yFor(steps[i].temp));   // horizontal plateau at step i level
-        pts.push("L "+xEnd+","+yFor(steps[i+1].temp));  // vertical jump to next level
-      }
-    }
-    var path=document.createElementNS(svgNS,"path");
-    path.setAttribute("d",pts.join(" "));
-    path.setAttribute("fill","none"); path.setAttribute("stroke","#2f6fb0"); path.setAttribute("stroke-width","2.5"); path.setAttribute("stroke-linejoin","round");
-    svg.appendChild(path);
-
-    steps.forEach(function(s,i){
-      var c=document.createElementNS(svgNS,"circle");
-      c.setAttribute("cx",xFor(i)); c.setAttribute("cy",yFor(s.temp)); c.setAttribute("r","4");
-      c.setAttribute("fill", s.capture?"#b45309":"#2f6fb0");
-      svg.appendChild(c);
-      var t=document.createElementNS(svgNS,"text");
-      t.setAttribute("x",xFor(i)); t.setAttribute("y",yFor(s.temp)-9);
-      t.setAttribute("font-size","11"); t.setAttribute("text-anchor","middle"); t.setAttribute("fill","#333");
-      t.textContent=(i+1)+" "+s.temp+"\u00b0C";
-      svg.appendChild(t);
-    });
     c.appendChild(svg);
   }
 
