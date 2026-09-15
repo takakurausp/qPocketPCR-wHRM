@@ -2192,6 +2192,11 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
   .actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:6px; }
   pre.preview { background:#0f172a; color:#e2e8f0; padding:14px; border-radius:8px; font-size:12.5px; line-height:1.45; overflow:auto; max-height:340px; white-space:pre-wrap; word-break:break-all; }
   .hrm { border-left:4px solid var(--accent); background:#f6f9fc; }
+  /* Toggle-driven section emphasis */
+  section { transition:opacity .25s ease, filter .25s ease, box-shadow .25s ease; }
+  #ampSection.active { box-shadow:0 0 0 1px var(--accent); }
+  #meltSection.active { box-shadow:0 0 0 1px var(--accent); }
+  section.dimmed { opacity:.45; filter:saturate(.3); }
   .warn { color:#b45309; font-size:12px; margin-top:6px; min-height:16px; }
   .status { font-size:12px; color:#15803d; min-height:16px; }
   .device { display:flex; gap:8px; align-items:center; }
@@ -2223,9 +2228,9 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
   </section>
 
   <!-- Steps -->
-  <section>
+  <section id="ampSection">
     <h2>Protocol Temperature Profile &nbsp;<span class="chip" id="stepCount">0 steps</span></h2>
-    <div id="profileChart" style="height:150px; border:1px solid var(--line); border-radius:8px; margin-bottom:12px; background:#fff;"></div>
+    <div id="profileChart" style="min-height:140px; border:1px solid var(--line); border-radius:8px; margin-bottom:12px; background:#fff;"></div>
 
     <div id="steps"></div>
 
@@ -2233,7 +2238,7 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
   </section>
 
   <!-- HRM / MELT block -->
-  <section class="hrm">
+  <section class="hrm" id="meltSection">
     <h2>Melt (HRM) Block &nbsp;<span class="chip" id="meltPoints">0 points</span></h2>
     <p style="font-size:12px;color:#555;margin:0 0 10px;">Runs a fine temperature ramp with fluorescence capture at each point. Set CYCLES to 0 for an HRM-only run.</p>
     <div class="grid">
@@ -2646,9 +2651,19 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
     document.getElementById(id).addEventListener("input", updatePreview);
   });
 
+  // Toggle-driven section emphasis: active block highlighted, inactive dimmed.
+  function refreshSectionStates(){
+    var ampOn = document.getElementById("ampToggle").checked;
+    var meltOn = document.getElementById("meltToggle").checked;
+    var ampSec = document.getElementById("ampSection");
+    var meltSec = document.getElementById("meltSection");
+    if (ampOn){ ampSec.classList.add("active"); ampSec.classList.remove("dimmed"); } else { ampSec.classList.remove("active"); ampSec.classList.add("dimmed"); }
+    if (meltOn){ meltSec.classList.add("active"); meltSec.classList.remove("dimmed"); } else { meltSec.classList.remove("active"); meltSec.classList.add("dimmed"); }
+  }
+
   // Re-render chart/preview when the PCR / HRM toggles change.
   ["ampToggle","meltToggle"].forEach(function(id){
-    document.getElementById(id).addEventListener("change", function(){ renderChart(); updatePreview(); });
+    document.getElementById(id).addEventListener("change", function(){ renderChart(); updatePreview(); refreshSectionStates(); });
   });
 
   // default date = today
@@ -2658,6 +2673,7 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
   renderSteps();
   renderChart();
   updatePreview();
+  refreshSectionStates();
   window.addEventListener("resize", renderChart);
 })();
 </script>
