@@ -2262,6 +2262,16 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
       <input type="text" id="deviceUrl" placeholder="http://192.168.4.1/" style="max-width:200px;" value="">
       <span class="chip" id="uploadHint">SAVE downloads PROTOCOL.TXT</span>
     </div>
+
+    <!-- Save named protocol to device internal memory (SPIFFS) -->
+    <div style="margin-top:14px; border-top:1px solid var(--line); padding-top:12px;">
+      <label style="font-size:12px;color:#555;margin-bottom:6px;display:block;">Save named protocol to device (stored in internal memory)</label>
+      <div class="actions">
+        <input type="text" id="namedName" placeholder="Protocol name" style="flex:1 1 auto; max-width:200px;" value="">
+        <button class="primary" id="saveNamedBtn">Save to device</button>
+      </div>
+      <span class="status" id="namedStatus"></span>
+    </div>
   </section>
 
   <!-- Preview -->
@@ -2635,6 +2645,40 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
       .catch(function(e){ status.textContent = "Upload error: "+e.message; });
   }
 
+  // Save a named protocol into device internal memory (SPIFFS:/PROTO_0N.txt).
+  function saveNamedToDevice(){
+    var url = document.getElementById("deviceUrl").value.trim();
+    if (!url) {
+      document.getElementById("namedStatus").textContent = "Set the device URL first.";
+      return;
+    }
+    url = url.replace(/\/$/,"");
+    var name = document.getElementById("namedName").value.trim() || "Unnamed";
+    var text = buildProtocolText();
+    if (!text) {
+      document.getElementById("namedStatus").textContent = "Add a step first.";
+      return;
+    }
+    var status = document.getElementById("namedStatus");
+    status.textContent = "Saving named protocol...";
+    var blob = new Blob([text], {type:"text/plain"});
+    var fd = new FormData();
+    fd.append("name", name);
+    fd.append("protocol", blob, "PROTOCOL.TXT");
+    fetch(url + "/saveproto", { method:"POST", body:fd })
+      .then(function(r){ return r.text().then(function(t){ return {ok:r.ok, t:t}; }); })
+      .then(function(res){
+        // Response is newline-separated "id|name" lines; take the first id.
+        var id = "";
+        if (res.ok && res.t) {
+          var first = res.t.split("\n")[0];
+          if (first && first.indexOf("|") >= 0) id = first.substring(0, first.indexOf("|")).trim();
+        }
+        status.textContent = res.ok ? ("Saved \""+name+"\" to device memory (id="+(id||"?")+")") : "Save failed";
+      })
+      .catch(function(e){ status.textContent = "Save error: "+e.message; });
+  }
+
   // ---------- init ----------
   document.getElementById("addStep").addEventListener("click", function(){
     steps.push({ name:"New step", temp:72, dur:30, unit:"sec", capture:false });
@@ -2644,6 +2688,9 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__("<!DOCTYPE html>
     downloadProtocol();
     var url = document.getElementById("deviceUrl").value.trim();
     if (url) uploadToDevice(url);
+  });
+  document.getElementById("saveNamedBtn").addEventListener("click", function(){
+    saveNamedToDevice();
   });
 
   // live-update when melt fields change too
@@ -2833,7 +2880,7 @@ void handleSaveProtocol() {
     return;
   }
   saveNamedProtocol(name, text);
-  // Return the updated list so the UI can refresh.
+  // Return the updated list so the UI can confirm which slot was used.
   String list = listProtocols();
   server.send(200, "text/plain", list);
 }
