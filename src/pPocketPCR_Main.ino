@@ -418,6 +418,20 @@ static bool fetchNtpTime()
 }
 
 
+// --- WiFi handler forward declarations (for Arduino IDE top-down compilation) ---
+void handleRoot();
+void handleBuilder();
+void handleStatus();
+void handleStart();
+void handleStop();
+void handleDownload();
+void handleUpload();
+void handleUploadDone();
+void handleListProtocols();
+void handleLoadProtocol();
+void handleSaveProtocol();
+
+
 void setup() {
 
 // Initialize WDT with 5 second timeout, reset on trigger

@@ -239,7 +239,7 @@ If you prefer to flash over a browser instead of `pio upload`, use the [Adafruit
 
 | Slot | File | Offset (hex) |
 |------|------|--------------|
-| 1st | `bootloader.bin` | `0x0000` |
+| 1st | `bootloader.bin` | `0x1000` |
 | 2nd | `partitions.bin` | `0x8000` |
 | 3rd | `firmware.bin` | `0x10000` |
 
