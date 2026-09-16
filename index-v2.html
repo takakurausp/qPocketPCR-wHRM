@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  qPocketPCR  --  sample redesign of the top page (served by handleRoot())
+  ============================================================================
+  This is a STANDALONE SAMPLE. It is NOT wired into the firmware yet.
+
+  Design tokens / structure are copied from builder.html so that "/" and
+  "/builder" look like the same product.
+
+  FUNCTIONAL PARITY with the current handleRoot() output -- nothing added or
+  removed: same four status values, same /start + /stop buttons, same /builder
+  link, same /upload form (POST, multipart, field name "protocol", accept .txt),
+  same /download link, same footer credit line. The page is still rendered
+  entirely server-side; there is no polling script.
+
+  Server-injected values (all still produced by handleRoot()):
+    #mode                       <- getModeString()      IDLE | PCR | HRM | COMPLETE
+    #progress                   <- getProgress()        integer 0-100
+    #progressBar  style="width" <- same getProgress()   (presentation only)
+    #step                       <- String(PCRstep + 1) + "/" + String(pcrProtocol.stepCount)
+    #temp                       <- String(temperature_mean, 1)
+  Everything else below is static markup.  The values shown are example values. The single /builder link that used to sit
+  in the Protocol section now lives in the header instead (one link, same target).
+
+  For reference, the firmware would emit the markup as one raw string literal,
+  exactly like BUILDER_HTML does today.
+  ============================================================================
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qPocketPCR</title>
+<style>
+  :root { --line:#d7dbe0; --accent:#2f6fb0; --accent-dk:#255a91; --grey:#f3f4f6; --dark:#333; --muted:#666; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    margin: 0; color: #1b1b1b; background: #fafafa;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* ---------- chrome (same as /builder) ---------- */
+  header { background:#fff; border-bottom:1px solid var(--line); padding:14px 20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; }
+  header .spacer { flex:1 1 auto; }
+  header a { 
+    background: var(--accent); 
+    color: #fff; 
+    text-decoration: none; 
+    font-size: 13px; 
+    font-weight: 600; 
+    padding: 8px 16px; 
+    border-radius: 6px; 
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(47,111,176,0.2);
+    transition: background 0.2s ease;
+  }
+  header a:hover { 
+    background: var(--accent-dk); 
+    text-decoration: none; 
+  }
+  .wrap { max-width:960px; margin:0 auto; padding:20px; }
+  section { background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:18px; }
+  h2 { font-size:15px; margin:0 0 12px; color:#222; }
+  .credit { margin:2em 0 0; font-size:11px; color:#888; }
+
+  /* ---------- controls ---------- */
+  button, a.btn { font:inherit; font-size:14px; border-radius:8px; padding:9px 16px; cursor:pointer; }
+  a.btn { display:inline-block; text-decoration:none; }
+  .primary { background:var(--accent); color:#fff; border:1px solid var(--accent); }
+  .primary:hover { background:var(--accent-dk); border-color:var(--accent-dk); }
+  .ghost { background:#fff; color:var(--accent); border:1px solid var(--accent); }
+  .ghost:hover { background:#f2f7fc; }
+  .actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .hint { font-size:12px; color:var(--muted); margin:8px 0 0; }
+
+  /* ---------- status ---------- */
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; }
+  .tile { background:var(--grey); border-radius:8px; padding:10px 12px; min-width:0; }
+  .tile .k { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+  .tile .v { font-size:22px; font-weight:600; line-height:1.25; margin-top:2px; word-break:break-word; }
+  .tile .v small { font-size:13px; font-weight:400; color:var(--muted); }
+  .bar { height:6px; background:#e3e7eb; border-radius:999px; margin-top:14px; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:var(--accent); border-radius:999px; }
+
+  /* ---------- misc ---------- */
+  input[type=file] { font-size:13px; color:#333; }
+  .note { font-size:12px; color:var(--muted); }
+
+  @media (max-width:420px) {
+    .wrap { padding:14px; }
+    section { padding:14px; }
+    .tile .v { font-size:19px; }
+    .actions > button, .actions > a.btn { flex:1 1 auto; text-align:center; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>qPocketPCR</h1>
+  <span class="spacer"></span>
+  <!-- existing /builder link (target=_blank, same as before) -->
+  <a href="/builder" target="_blank">Protocol Builder &#8594;</a>
+</header>
+
+<div class="wrap">
+
+  <!-- ============ Status (server-rendered, no polling) ============ -->
+  <section>
+    <h2>Status</h2>
+    <div class="tiles">
+      <div class="tile">
+        <div class="k">Mode</div>
+        <div class="v"><span id="mode">HRM</span></div>
+      </div>
+      <div class="tile">
+        <div class="k">Progress</div>
+        <div class="v"><span id="progress">42</span><small>%</small></div>
+      </div>
+      <div class="tile">
+        <div class="k">Step</div>
+        <div class="v"><span id="step">5/12</span></div>
+      </div>
+      <div class="tile">
+        <div class="k">Temp</div>
+        <div class="v"><span id="temp">72.4</span><small> &deg;C</small></div>
+      </div>
+    </div>
+    <!-- width shows the same getProgress() value -->
+    <div class="bar"><i id="progressBar" style="width:42%"></i></div>
+  </section>
+
+  <!-- ============ Control ============ -->
+  <section>
+    <h2>Control</h2>
+    <div class="actions">
+      <button class="primary" onclick="fetch('/start')">Start</button>
+      <button class="ghost" onclick="fetch('/stop')">Stop</button>
+    </div>
+  </section>
+
+  <!-- ============ Protocol ============ -->
+  <section>
+    <h2>Protocol</h2>
+    <form action="/upload" method="post" enctype="multipart/form-data" class="actions">
+      <input type="file" name="protocol" accept=".txt">
+      <button class="primary" type="submit">Upload</button>
+    </form>
+    <p class="hint">Upload a new <b>PROTOCOL.TXT</b> to make it the active protocol.</p>
+  </section>
+
+  <!-- ============ Results ============ -->
+  <section>
+    <h2>Results</h2>
+    <div class="actions">
+      <a class="btn ghost" href="/download">Download DATAQPCR.TXT</a>
+    </div>
+  </section>
+
+  <p class="credit">qPocketPCR-wHRM v0.1 &mdash; forked from qPocketPCR V1.1 (GaudiLabs); &copy; Takakura</p>
+
+</div>
+
+</body>
+</html>
