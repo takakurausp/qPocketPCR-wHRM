@@ -608,11 +608,17 @@ bool loadBinFromSPIFFS(uint8_t binArray[], size_t binSize, const char* filename)
 
 void saveMaskToSPIFFS(uint8_t *maskBuf)
 {
-    // NOTE: must be static, not a stack local. The buffer is ~9.6 KB, which is
-    // larger than the 8 KB Arduino loop/setup task stack and would overflow it
-    // (crash + reset loop) as soon as this function is called.
-    static uint8_t packed[MASK_PACKED_BYTES + 1];
-    memset(packed, 0, sizeof(packed));
+    // The packed buffer is ~9.6 KB. It must NOT be a stack local (would overflow
+    // the 8 KB Arduino loop/setup task stack) nor a static one (would overflow
+    // dram0.bss). Allocate it on the heap, preferring PSRAM, and free it after.
+    uint8_t *packed = (uint8_t *)heap_caps_malloc(MASK_PACKED_BYTES + 1, MALLOC_CAP_SPIRAM);
+    if (packed == NULL) packed = (uint8_t *)malloc(MASK_PACKED_BYTES + 1);
+    if (packed == NULL) {
+        Serial.println("saveMaskToSPIFFS: out of memory");
+        return;
+    }
+
+    memset(packed, 0, MASK_PACKED_BYTES + 1);
     packed[0] = MASK_MAGIC;
     for (int i = 0; i < MASK_PIXELS; i++) {
         if (maskBuf[i]) packed[1 + (i / 8)] |= (0x80 >> (i % 8));
@@ -621,12 +627,14 @@ void saveMaskToSPIFFS(uint8_t *maskBuf)
     File file = SPIFFS.open("/mask.bin", FILE_WRITE);
     if (!file) {
         Serial.println("saveMaskToSPIFFS: failed to open for writing");
+        free(packed);
         return;
     }
-    file.write((uint8_t *)packed, sizeof(packed));
+    file.write((uint8_t *)packed, MASK_PACKED_BYTES + 1);
     esp_task_wdt_reset();
     file.close();
-    Serial.printf("saveMaskToSPIFFS: wrote %d bytes (magic 0x%02X)\n", sizeof(packed), packed[0]);
+    free(packed);
+    Serial.printf("saveMaskToSPIFFS: wrote %d bytes (magic 0x%02X)\n", MASK_PACKED_BYTES + 1, MASK_MAGIC);
 }
 
 bool loadMaskFromSPIFFS(uint8_t *maskBuf)
@@ -637,15 +645,23 @@ bool loadMaskFromSPIFFS(uint8_t *maskBuf)
         return true; // failure
     }
 
-    // NOTE: must be static, not a stack local. The buffer is ~9.6 KB, which is
-    // larger than the 8 KB Arduino loop/setup task stack and would overflow it
-    // (crash + reset loop) on every boot right after "Baseline loaded".
-    static uint8_t packed[MASK_PACKED_BYTES + 1];
-    size_t bytesRead = file.readBytes((char *)packed, sizeof(packed));
+    // The packed buffer is ~9.6 KB. It must NOT be a stack local (would overflow
+    // the 8 KB Arduino loop/setup task stack right after "Baseline loaded") nor a
+    // static one (would overflow dram0.bss). Use the heap, preferring PSRAM.
+    uint8_t *packed = (uint8_t *)heap_caps_malloc(MASK_PACKED_BYTES + 1, MALLOC_CAP_SPIRAM);
+    if (packed == NULL) packed = (uint8_t *)malloc(MASK_PACKED_BYTES + 1);
+    if (packed == NULL) {
+        Serial.println("loadMaskFromSPIFFS: out of memory");
+        file.close();
+        return true; // failure
+    }
+
+    size_t bytesRead = file.readBytes((char *)packed, MASK_PACKED_BYTES + 1);
     file.close();
 
-    if (bytesRead != sizeof(packed)) {
+    if (bytesRead != MASK_PACKED_BYTES + 1) {
         Serial.println("loadMaskFromSPIFFS: incomplete read");
+        free(packed);
         return true; // failure
     }
 
@@ -654,12 +670,14 @@ bool loadMaskFromSPIFFS(uint8_t *maskBuf)
     // fall back to a fresh initMask() so the device still works.
     if (packed[0] != MASK_MAGIC) {
         Serial.println("loadMaskFromSPIFFS: bad magic - ignoring legacy mask.bin");
+        free(packed);
         return true; // failure -> caller will re-init mask
     }
 
     for (int i = 0; i < MASK_PIXELS; i++) {
         maskBuf[i] = (packed[1 + (i / 8)] & (0x80 >> (i % 8))) != 0;
     }
+    free(packed);
     Serial.printf("loadMaskFromSPIFFS: loaded %d pixels\n", MASK_PIXELS);
     return false; // success
 }
@@ -822,10 +840,15 @@ void readWifiConfig()
   if (config_length > maxConfigLength) config_length = maxConfigLength;
   if (config_length <= 0) return;
 
-  // Read the whole file content into a temporary buffer.
-  // NOTE: static, not a stack local: this is 20 KB and would overflow the 8 KB
-  // Arduino loop/setup task stack (crash + reset) whenever this runs.
-  static char buf[DATAQPCR_START_CLUSTER * DISK_SECTOR_SIZE];
+  // Read the whole file content into a temporary buffer. Use the heap (PSRAM
+  // preferred): a stack buffer would overflow the 8 KB task stack and a static
+  // one would overflow dram0.bss.
+  char *buf = (char *)heap_caps_malloc(maxConfigLength + 1, MALLOC_CAP_SPIRAM);
+  if (buf == NULL) buf = (char *)malloc(maxConfigLength + 1);
+  if (buf == NULL) {
+    Serial.println("readWifiConfig: out of memory");
+    return;
+  }
   int total = 0;
   int cluster = config_cluster;
   while (total < maxConfigLength && cluster >= 2 && cluster < DISK_SECTOR_COUNT) {
@@ -857,6 +880,7 @@ void readWifiConfig()
     }
     pos += nl - (buf + pos); // advance past this line
   }
+  free(buf);
 }
 
 // Create an empty WIFI.TXT template in the USB disk image if one does not exist.
