@@ -37,6 +37,7 @@
   section.dimmed { opacity:.45; filter:saturate(.3); }
   .warn { color:#b45309; font-size:12px; margin-top:6px; min-height:16px; }
   .status { font-size:12px; color:#15803d; min-height:16px; }
+  .hint { font-size:12px; color:#666; margin:6px 0 0; }
   .device { display:flex; gap:8px; align-items:center; }
   .chip { display:inline-block; background:var(--grey); border-radius:999px; padding:2px 10px; font-size:12px; color:#444; }
 </style>
@@ -55,9 +56,6 @@
     <div class="grid">
       <div><label>Protocol Name</label><input type="text" id="name" value="My Protocol"></div>
       <div><label>Date</label><input type="date" id="date"></div>
-      <div><label>Total Cycles</label><input type="number" id="cycles" value="35" min="0"></div>
-      <div><label>Repeat From Step</label><input type="number" id="repeatStart" value="2" min="1"></div>
-      <div><label>Repeat To Step</label><input type="number" id="repeatEnd" value="4" min="1"></div>
     </div>
     <div class="actions" style="margin-top:10px;">
       <label style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" id="ampToggle" checked> PCR amplification (REPEAT/CYCLES + steps)</label>
@@ -69,6 +67,13 @@
   <section id="ampSection">
     <h2>PCR Block&nbsp;<span class="chip" id="stepCount">0 steps</span></h2>
     <div id="profileChart" style="min-height:140px; border:1px solid var(--line); border-radius:8px; margin-bottom:12px; background:#fff;"></div>
+
+    <!-- PCR cycling parameters -->
+    <div class="grid" style="grid-template-columns:repeat(3,1fr); margin-bottom:12px;">
+      <div><label>Total Cycles</label><input type="number" id="cycles" value="35" min="0"></div>
+      <div><label>Repeat From Step</label><input type="number" id="repeatStart" value="2" min="1"></div>
+      <div><label>Repeat To Step</label><input type="number" id="repeatEnd" value="4" min="1"></div>
+    </div>
 
     <div id="steps"></div>
 
@@ -90,25 +95,32 @@
 
   <!-- Actions -->
   <section>
-    <h2>Save &amp; Upload</h2>
+    <h2>Save Protocol</h2>
     <div class="actions">
-      <button class="primary" id="saveBtn">Save Protocol as PROTOCOL.TXT</button>
+      <button class="primary" id="saveBtn">Save PROTOCOL.TXT to device</button>
+      <button class="ghost" id="downloadBtn">Download</button>
       <span class="status" id="uploadStatus"></span>
     </div>
-    <div style="margin-top:12px;" class="device">
-      <label style="margin:0;">Upload to device:</label>
-      <input type="text" id="deviceUrl" placeholder="http://192.168.4.1/" style="max-width:200px;" value="">
-      <span class="chip" id="uploadHint">SAVE downloads PROTOCOL.TXT</span>
-    </div>
+    <p class="hint">Saves to the device's internal USB storage as <b>PROTOCOL.TXT</b> and makes it the active protocol.</p>
+  </section>
 
-    <!-- Save named protocol to device internal memory (SPIFFS) -->
-    <div style="margin-top:14px; border-top:1px solid var(--line); padding-top:12px;">
-      <label style="font-size:12px;color:#555;margin-bottom:6px;display:block;">Save named protocol to device (stored in internal memory)</label>
+  <!-- Named protocol library -->
+  <section>
+    <h2>Saved Protocols</h2>
+    <p class="hint" style="margin:0 0 10px;">Store this protocol in the device's internal memory with a name, or load a previously saved one into the editor.</p>
+    <div class="actions">
+      <input type="text" id="namedName" placeholder="Protocol name" style="flex:1 1 auto; max-width:220px;" value="">
+      <button class="primary" id="saveNamedBtn">Save to device</button>
+    </div>
+    <span class="status" id="namedStatus"></span>
+
+    <div style="margin-top:12px; border-top:1px solid var(--line); padding-top:12px;">
       <div class="actions">
-        <input type="text" id="namedName" placeholder="Protocol name" style="flex:1 1 auto; max-width:200px;" value="">
-        <button class="primary" id="saveNamedBtn">Save to device</button>
+        <select id="protoList" style="flex:1 1 auto; max-width:300px;"></select>
+        <button class="ghost" id="refreshListBtn">Refresh</button>
+        <button class="primary" id="loadNamedBtn">Load</button>
       </div>
-      <span class="status" id="namedStatus"></span>
+      <span class="status" id="loadStatus"></span>
     </div>
   </section>
 
@@ -204,8 +216,8 @@
     var mi = parseFloat(document.getElementById("meltInc").value);
     if (isNaN(mf)||isNaN(mt)||isNaN(mi)||mi<=0) return 0;
     // Must match Parsing.cpp exactly: (int)((meltTo - meltFrom) / meltInc + 0.5f) + 1
-  // Use Math.floor(x+0.5), NOT Math.round, to mirror C++'s truncating cast.
-  return Math.floor((mt-mf)/mi + 0.5) + 1;
+    // Use Math.floor(x+0.5), NOT Math.round, to mirror C++'s truncating cast.
+    return Math.floor((mt-mf)/mi + 0.5) + 1;
   }
 
   // ---------- rendering: step editor ----------
@@ -234,8 +246,6 @@
     // events
     box.querySelectorAll("input[data-f], select[data-f]").forEach(function(el){
       el.addEventListener("input", function(){
-        var s = steps[+el.getAttribute("data-idx") || 0];
-        // find step by index attribute on closest .step
         var stepEl = el.closest(".step");
         var i = Array.prototype.indexOf.call(box.children, stepEl);
         var f = el.getAttribute("data-f");
@@ -455,7 +465,96 @@
     }
   }
 
-  // ---------- save / upload ----------
+  // ---------- protocol text -> form ----------
+  // Returns the trimmed value that follows "KEY:" on the first matching line.
+  function lineValue(lines, key){
+    var k = key.toUpperCase();
+    for (var i=0;i<lines.length;i++){
+      var t = lines[i].replace(/^\s+/,"");
+      if (t.toUpperCase().indexOf(k) === 0) return t.substring(key.length).trim();
+    }
+    return "";
+  }
+
+  // "mm.dd.yyyy" -> "yyyy-mm-dd" (for <input type=date>)
+  function parseDateToInput(s){
+    if (!s) return "";
+    var m = s.match(/(\d{1,2})[.\/](\d{1,2})[.\/](\d{2,4})/);
+    if (!m) return "";
+    var yy = m[3]; if (yy.length === 2) yy = "20" + yy;
+    return yy + "-" + ("0"+m[1]).slice(-2) + "-" + ("0"+m[2]).slice(-2);
+  }
+
+  function populateFromProtocolText(text){
+    if (!text || !text.trim()) return false;
+    var lines = text.replace(/\r/g,"").split("\n");
+
+    var name = lineValue(lines, "NAME:");
+    if (name) document.getElementById("name").value = name;
+
+    var di = parseDateToInput(lineValue(lines, "DATE:"));
+    if (di) document.getElementById("date").value = di;
+
+    var repeat = lineValue(lines, "REPEAT:");
+    if (repeat && repeat.indexOf("-") >= 0){
+      var parts = repeat.split("-");
+      var a = parseInt(parts[0],10), b = parseInt(parts[1],10);
+      if (!isNaN(a)) document.getElementById("repeatStart").value = a;
+      if (!isNaN(b)) document.getElementById("repeatEnd").value = b;
+    }
+    var cycStr = lineValue(lines, "CYCLES:");
+    if (cycStr !== ""){ var c = parseInt(cycStr,10); if (!isNaN(c)) document.getElementById("cycles").value = c; }
+
+    // Steps: a STEP line starts a block; the following lines carry its fields.
+    var newSteps = [];
+    var stepRe = /^\s*STEP\s+\d+\s*:\s*(.*)$/i;
+    var i = 0;
+    while (i < lines.length){
+      var sm = lines[i].match(stepRe);
+      if (sm){
+        var st = { name: sm[1].trim(), temp: 0, dur: 0, unit:"sec", capture:false };
+        i++;
+        while (i < lines.length && !stepRe.test(lines[i])){
+          var l = lines[i];
+          var tm = l.match(/TEMPERATURE\s*:\s*([\-\d.]+)/i);
+          if (tm) st.temp = parseFloat(tm[1]) || 0;
+          var dm = l.match(/DURATION\s*:\s*([\d.]+)\s*([a-zA-Z]*)/i);
+          if (dm){
+            st.dur = parseFloat(dm[1]) || 0;
+            st.unit = /m/i.test(dm[2]) ? "min" : "sec";
+          }
+          if (/CAPTURE\s*:/i.test(l)) st.capture = true;
+          i++;
+        }
+        newSteps.push(st);
+        continue;
+      }
+      i++;
+    }
+
+    var hasMelt = /(^|\n)\s*MELT\s+(FROM|TO|INC|HOLD)\s*:/i.test(text);
+    var ampOn = (newSteps.length > 0) || (repeat !== "") || (cycStr !== "");
+
+    // HRM-only protocol: keep the step editor empty.
+    steps = ampOn ? newSteps : [];
+    document.getElementById("ampToggle").checked = ampOn;
+    document.getElementById("meltToggle").checked = hasMelt;
+
+    if (hasMelt){
+      var mf = lineValue(lines,"MELT FROM:"); if (mf !== "") document.getElementById("meltFrom").value = mf;
+      var mt = lineValue(lines,"MELT TO:");   if (mt !== "") document.getElementById("meltTo").value = mt;
+      var mi = lineValue(lines,"MELT INC:");  if (mi !== "") document.getElementById("meltInc").value = mi;
+      var mh = lineValue(lines,"MELT HOLD:"); if (mh !== "") document.getElementById("meltHold").value = mh;
+    }
+
+    renderSteps();
+    renderChart();
+    updatePreview();
+    refreshSectionStates();
+    return true;
+  }
+
+  // ---------- save / load ----------
   function downloadProtocol(){
     var text = buildProtocolText();
     var blob = new Blob([text], {type:"text/plain"});
@@ -466,55 +565,92 @@
     setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 0);
   }
 
-  function uploadToDevice(url){
+  function saveProtocolToDevice(){
     var status = document.getElementById("uploadStatus");
-    if (!url) { return; }
-    url = url.replace(/\/$/,"");
     var text = buildProtocolText();
-    var blob = new Blob([text], {type:"text/plain"});
-    var fd = new FormData();
-    fd.append("protocol", blob, "PROTOCOL.TXT");
-    status.textContent = "Uploading...";
-    fetch(url + "/upload", { method:"POST", body:fd })
+    status.textContent = "Saving to device...";
+    fetch("/saveprotocol", { method:"POST", headers:{"Content-Type":"text/plain"}, body:text })
       .then(function(r){ return r.text().then(function(t){ return {ok:r.ok, t:t}; }); })
       .then(function(res){
-        status.textContent = res.ok ? ("Uploaded to device ("+res.t+")") : "Upload failed";
+        status.textContent = res.ok
+          ? "Saved to device USB storage (PROTOCOL.TXT)"
+          : ("Save failed: " + res.t);
       })
-      .catch(function(e){ status.textContent = "Upload error: "+e.message; });
+      .catch(function(e){ status.textContent = "Save error: " + e.message; });
   }
 
-  // Save a named protocol into device internal memory (SPIFFS:/PROTO_0N.txt).
   function saveNamedToDevice(){
-    var url = document.getElementById("deviceUrl").value.trim();
-    if (!url) {
-      document.getElementById("namedStatus").textContent = "Set the device URL first.";
-      return;
-    }
-    url = url.replace(/\/$/,"");
     var name = document.getElementById("namedName").value.trim() || "Unnamed";
-    var text = buildProtocolText();
-    if (!text) {
-      document.getElementById("namedStatus").textContent = "Add a step first.";
-      return;
-    }
     var status = document.getElementById("namedStatus");
-    status.textContent = "Saving named protocol...";
+    var text = buildProtocolText();
+    if (!text){ status.textContent = "Add a step first."; return; }
+    status.textContent = "Saving...";
     var blob = new Blob([text], {type:"text/plain"});
     var fd = new FormData();
     fd.append("name", name);
     fd.append("protocol", blob, "PROTOCOL.TXT");
-    fetch(url + "/saveproto", { method:"POST", body:fd })
+    fetch("/saveproto", { method:"POST", body:fd })
       .then(function(r){ return r.text().then(function(t){ return {ok:r.ok, t:t}; }); })
       .then(function(res){
-        // Response is newline-separated "id|name" lines; take the first id.
-        var id = "";
-        if (res.ok && res.t) {
-          var first = res.t.split("\n")[0];
-          if (first && first.indexOf("|") >= 0) id = first.substring(0, first.indexOf("|")).trim();
-        }
-        status.textContent = res.ok ? ("Saved \""+name+"\" to device memory (id="+(id||"?")+")") : "Save failed";
+        status.textContent = res.ok ? ("Saved \"" + name + "\" to device memory") : "Save failed";
+        loadProtocolList();
       })
-      .catch(function(e){ status.textContent = "Save error: "+e.message; });
+      .catch(function(e){ status.textContent = "Save error: " + e.message; });
+  }
+
+  // ---------- saved protocol library ----------
+  function loadProtocolList(){
+    var sel = document.getElementById("protoList");
+    if (!sel) return;
+    fetch("/listproto")
+      .then(function(r){ return r.text(); })
+      .then(function(t){
+        sel.innerHTML = "";
+        var any = false;
+        t.replace(/\r/g,"").split("\n").forEach(function(line){
+          line = line.trim();
+          if (!line || line.indexOf("|") < 0) return;
+          var p = line.split("|");
+          var o = document.createElement("option");
+          o.value = p[0];
+          o.textContent = p[0] + ": " + p.slice(1).join("|");
+          sel.appendChild(o);
+          any = true;
+        });
+        if (!any){
+          var o = document.createElement("option");
+          o.value = ""; o.textContent = "(no saved protocols)";
+          sel.appendChild(o);
+        }
+      })
+      .catch(function(e){});
+  }
+
+  function loadSelectedProtocol(){
+    var sel = document.getElementById("protoList");
+    var id = sel ? sel.value : "";
+    var status = document.getElementById("loadStatus");
+    if (!id){ status.textContent = "No protocol selected."; return; }
+    status.textContent = "Loading...";
+    fetch("/loadproto?id=" + encodeURIComponent(id))
+      .then(function(r){ return r.text().then(function(t){ return {ok:r.ok, t:t}; }); })
+      .then(function(res){
+        if (!res.ok){ status.textContent = "Load failed: " + res.t; return; }
+        if (populateFromProtocolText(res.t)){
+          status.textContent = "Loaded into the editor. Press \"Save PROTOCOL.TXT to device\" to activate it.";
+        } else {
+          status.textContent = "Loaded, but the content could not be parsed.";
+        }
+      })
+      .catch(function(e){ status.textContent = "Load error: " + e.message; });
+  }
+
+  // Reflect the current active protocol into the editor on open.
+  function loadCurrentProtocol(){
+    fetch("/getproto")
+      .then(function(r){ return r.ok ? r.text() : ""; })
+      .then(function(t){ if (t && t.trim()) populateFromProtocolText(t); })
+      .catch(function(e){});
   }
 
   // ---------- init ----------
@@ -522,14 +658,11 @@
     steps.push({ name:"New step", temp:72, dur:30, unit:"sec", capture:false });
     renderSteps(); updatePreview();
   });
-  document.getElementById("saveBtn").addEventListener("click", function(){
-    downloadProtocol();
-    var url = document.getElementById("deviceUrl").value.trim();
-    if (url) uploadToDevice(url);
-  });
-  document.getElementById("saveNamedBtn").addEventListener("click", function(){
-    saveNamedToDevice();
-  });
+  document.getElementById("saveBtn").addEventListener("click", saveProtocolToDevice);
+  document.getElementById("downloadBtn").addEventListener("click", downloadProtocol);
+  document.getElementById("saveNamedBtn").addEventListener("click", saveNamedToDevice);
+  document.getElementById("loadNamedBtn").addEventListener("click", loadSelectedProtocol);
+  document.getElementById("refreshListBtn").addEventListener("click", loadProtocolList);
 
   // live-update when melt fields change too
   ["meltFrom","meltTo","meltInc","meltHold"].forEach(function(id){
@@ -560,9 +693,12 @@
   updatePreview();
   refreshSectionStates();
   window.addEventListener("resize", renderChart);
+
+  // Pull the current protocol and the saved-protocol list from the device.
+  loadCurrentProtocol();
+  loadProtocolList();
 })();
 </script>
 <footer style="margin-top:2em;font-size:11px;color:#888;">qPocketPCR-wHRM v0.1 &mdash; forked from qPocketPCR V1.1 (GaudiLabs); &copy; Takakura</footer>
 </body>
 </html>
-)

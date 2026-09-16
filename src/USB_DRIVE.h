@@ -75,6 +75,10 @@ String getConfig();
 
 void addFileToFAT(fs::FS &fs, String path);
 
+void addProtoToFAT(String str);
+
+void saveMscToSPIFFS(uint8_t array[DISK_SECTOR_COUNT][DISK_SECTOR_SIZE]);
+
 void InitializeUSBFiles();
 
 void InitializeUSB();
