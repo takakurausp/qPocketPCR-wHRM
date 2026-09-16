@@ -608,7 +608,11 @@ bool loadBinFromSPIFFS(uint8_t binArray[], size_t binSize, const char* filename)
 
 void saveMaskToSPIFFS(uint8_t *maskBuf)
 {
-    uint8_t packed[MASK_PACKED_BYTES + 1];
+    // NOTE: must be static, not a stack local. The buffer is ~9.6 KB, which is
+    // larger than the 8 KB Arduino loop/setup task stack and would overflow it
+    // (crash + reset loop) as soon as this function is called.
+    static uint8_t packed[MASK_PACKED_BYTES + 1];
+    memset(packed, 0, sizeof(packed));
     packed[0] = MASK_MAGIC;
     for (int i = 0; i < MASK_PIXELS; i++) {
         if (maskBuf[i]) packed[1 + (i / 8)] |= (0x80 >> (i % 8));
@@ -633,7 +637,10 @@ bool loadMaskFromSPIFFS(uint8_t *maskBuf)
         return true; // failure
     }
 
-    uint8_t packed[MASK_PACKED_BYTES + 1];
+    // NOTE: must be static, not a stack local. The buffer is ~9.6 KB, which is
+    // larger than the 8 KB Arduino loop/setup task stack and would overflow it
+    // (crash + reset loop) on every boot right after "Baseline loaded".
+    static uint8_t packed[MASK_PACKED_BYTES + 1];
     size_t bytesRead = file.readBytes((char *)packed, sizeof(packed));
     file.close();
 
@@ -816,7 +823,9 @@ void readWifiConfig()
   if (config_length <= 0) return;
 
   // Read the whole file content into a temporary buffer.
-  char buf[DATAQPCR_START_CLUSTER * DISK_SECTOR_SIZE];
+  // NOTE: static, not a stack local: this is 20 KB and would overflow the 8 KB
+  // Arduino loop/setup task stack (crash + reset) whenever this runs.
+  static char buf[DATAQPCR_START_CLUSTER * DISK_SECTOR_SIZE];
   int total = 0;
   int cluster = config_cluster;
   while (total < maxConfigLength && cluster >= 2 && cluster < DISK_SECTOR_COUNT) {
