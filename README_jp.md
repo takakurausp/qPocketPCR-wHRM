@@ -256,31 +256,50 @@ pio monitor             # 115200 ボーのシリアルコンソール
 
 ### Adafruit WebSerial ESP Tool での書き込み
 
-`pio upload` の代わりにブラウザから書き込む場合は、[Adafruit WebSerial ESP Tool](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/) を使います。5つのスロットがありますが、使うのは**3つだけ**です：
+`pio upload` の代わりにブラウザから書き込む場合は、[Adafruit WebSerial ESP Tool](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/) を使います。完全に書き込むには**4つ**のスロットを使います：
 
 | スロット | ファイル | Offset（0x形式） |
 |------|------|------|
-| 1番目 | `bootloader.bin` | `0x0000` |
+| 1番目 | `bootloader.bin` | `0x1000` |
 | 2番目 | `partitions.bin` | `0x8000` |
-| 3番目 | `firmware.bin` | `0x10000` |
+| 3番目 | `boot_app0.bin` | `0xE000` |
+| 4番目 | `firmware.bin` | `0x10000` |
 
-4・5番目のスロットは空のまま（Offset は `0` のまま）でかまいません。3つのファイルは `.pio/build/esp32_s2_usb_native/` にあります：
+最後のスロットは空のまま（Offset は `0` のまま）でかまいません。`bootloader.bin` / `partitions.bin` / `firmware.bin` は `.pio/build/esp32_s2_usb_native/` にあります：
 
 - `bootloader.bin`（約 14.8 KB）
 - `partitions.bin`（約 3 KB）
 - `firmware.bin`（約 997 KB ← メイン本体）
+
+`boot_app0.bin` はプロジェクトごとには生成されないため、フレームワークのパッケージから取得します：
+`~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin`
+（Arduino IDE の場合は `%LOCALAPPDATA%/Arduino15/packages/esp32/hardware/esp32/<バージョン>/tools/partitions/boot_app0.bin`）。
+
+または `tools/make_webflash_bin.py` を使うと、これらのコピーと**単一の結合イメージ（0x0 に書き込むだけ）**をまとめて作成できます：
+
+```bash
+python tools/make_webflash_bin.py \
+  --app        .pio/build/esp32_s2_usb_native/firmware.bin \
+  --bootloader .pio/build/esp32_s2_usb_native/bootloader.bin \
+  --partitions .pio/build/esp32_s2_usb_native/partitions.bin \
+  -o dist
+```
+
+Arduino IDE の場合は、先に **スケッチ → コンパイル済みバイナリをエクスポート** を実行し、`pPocketPCR_Main.ino.bin` / `pPocketPCR_Main.ino.bootloader.bin` / `pPocketPCR_Main.ino.partitions.bin` を渡してください。
 
 **手順：**
 
 1. ブラウザで [https://adafruit.github.io/Adafruit_WebSerial_ESPTool/](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/) を開く
 2. **Baud** を選択（推奨 **460800**、なければ 115200）
 3. ESP32-S2 をUSB接続した状態で **Connect** をクリック
-4. 各スロットで「Choose a file…」から上の bin を選び、Offset 欄に上の値を入力
+4. 各スロットで「Choose a file…」から上の bin を選び、Offset 欄に上の値を入力（結合イメージを作った場合は**1番目のスロットに `0x0`** で指定し、他は空にする）
 5. **Program** ボタンを押す（Erase は自動で行われる）
 
 ### オフセットがこの値である理由
 
+- `bootloader.bin` は ESP32-S2 では **0x1000** に配置される固定位置
 - `partitions.bin` は ESP32 の仕様で常に **0x8000** に配置される固定位置
+- `boot_app0.bin` は OTA データ領域の初期化用で **0xE000**
 - `firmware.bin` はアプリ本体で **0x10000**（標準的なファームウェア領域の始まり）
 - 実行アドレスは `0x40026b84` で、0x10000 配下にロードされる構成
 

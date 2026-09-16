@@ -52,7 +52,7 @@
 // ==================== CONSTANTS AND CONFIGURATION ====================
 
 // Version and system configuration
-#define VERSION_STRING  "v0.1"
+#define VERSION_STRING  "v0.22"
 #define FORMAT_SPIFFS_IF_FAILED true
 #define FILESYSTEM SPIFFS
 
@@ -1976,8 +1976,11 @@ const int margin_top = 30;
 
 
   int division=1;
-  int xSpacing=grid_w/captures;
-  if (xSpacing<minSpacing) {division=ceil(minSpacing*captures/grid_w);xSpacing=division*grid_w/captures;}
+  // Guard against a protocol with no capture steps: captures==0 would make the
+  // divisor below zero and crash the ESP32 (integer divide by zero).
+  int captureCount = captures > 0 ? captures : 1;
+  int xSpacing=grid_w/captureCount;
+  if (xSpacing<minSpacing) {division=ceil(minSpacing*captureCount/grid_w);xSpacing=division*grid_w/captureCount;}
 
   int yMax=INT_MIN;
   int yMin=INT_MAX;
@@ -2002,7 +2005,7 @@ int value = fluorescence[sensor][x];
   tftbuff.setFreeFont(&GaudiSans7pt7b); 
 
   // Draw vertical lines and labels (captures)
-  for (int i = 0; i <= (captures/division); i++) {
+  for (int i = 0; i <= (captureCount/division); i++) {
     int x = i * xSpacing;
     tftbuff.drawLine(x+margin_left, margin_top, x+margin_left, margin_top+grid_h, TFT_LIGHTGREY);
      String label= String(i*division);
@@ -2963,11 +2966,14 @@ void handleStart() {
     // WiFi経由の開始でも画面RUNと同じバッファ上限チェックを行う。
     // これがないとfluorescence[][]（MAX_MEASUREMENTS=400）をオーバーフローし、
     // 配列外書き出しによるメモリ破壊でESP32がクラッシュ／リセットする。
-    int wifiCaptures = countCaptures();
-    if (wifiCaptures >= MAX_MEASUREMENTS) {
+    // NOTE: 必ずグローバル captures を更新する。ここを更新しないと、後続の
+    //       drawGrid() が grid_w / captures を計算する際に captures==0 となり、
+    //       ゼロ除算例外でESP32が再起動する（画面RUNではこの代入がある）。
+    captures = countCaptures();
+    if (captures >= MAX_MEASUREMENTS) {
       Serial.print("WiFi start: Too many measurements: ");
-      Serial.println(wifiCaptures);
-      server.send(200, "text/plain", "Too many measurements: " + String(wifiCaptures));
+      Serial.println(captures);
+      server.send(200, "text/plain", "Too many measurements: " + String(captures));
       return;
     }
 

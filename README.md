@@ -235,29 +235,46 @@ pio monitor             # serial console at 115200 baud
 
 ### Flashing with the Adafruit WebSerial ESP Tool
 
-If you prefer to flash over a browser instead of `pio upload`, use the [Adafruit WebSerial ESP Tool](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/). It has five slots, but only **three** are used:
+If you prefer to flash over a browser instead of `pio upload`, use the [Adafruit WebSerial ESP Tool](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/). It has five slots, but only **four** are used for a complete flash:
 
 | Slot | File | Offset (hex) |
 |------|------|--------------|
 | 1st | `bootloader.bin` | `0x1000` |
 | 2nd | `partitions.bin` | `0x8000` |
-| 3rd | `firmware.bin` | `0x10000` |
+| 3rd | `boot_app0.bin` | `0xE000` |
+| 4th | `firmware.bin` | `0x10000` |
 
-Leave slots 4 and 5 empty (offset stays `0`). The three files are in `.pio/build/esp32_s2_usb_native/`:
+Leave the last slot empty (offset stays `0`). The `bootloader.bin`, `partitions.bin` and `firmware.bin` are in `.pio/build/esp32_s2_usb_native/`:
 
 - `bootloader.bin` (~14.8 KB)
 - `partitions.bin` (~3 KB)
 - `firmware.bin` (~997 KB — the main image)
+
+`boot_app0.bin` is not generated per project; take it from the framework package:
+`~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin`
+(or, for Arduino IDE, `%LOCALAPPDATA%/Arduino15/packages/esp32/hardware/esp32/<version>/tools/partitions/boot_app0.bin`).
+
+Alternatively, use `tools/make_webflash_bin.py` to copy these files into `dist/` and also build a **single** merged image to flash at `0x0`:
+
+```bash
+python tools/make_webflash_bin.py \
+  --app        .pio/build/esp32_s2_usb_native/firmware.bin \
+  --bootloader .pio/build/esp32_s2_usb_native/bootloader.bin \
+  --partitions .pio/build/esp32_s2_usb_native/partitions.bin \
+  -o dist
+```
+
+For Arduino IDE, first use **Sketch → Export Compiled Binary**, then pass `pPocketPCR_Main.ino.bin`, `pPocketPCR_Main.ino.bootloader.bin` and `pPocketPCR_Main.ino.partitions.bin`.
 
 **Steps:**
 
 1. Open [https://adafruit.github.io/Adafruit_WebSerial_ESPTool/](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/) in a browser.
 2. Select **Baud** (recommended **460800**, or 115200 if unavailable).
 3. Click **Connect** with the ESP32-S2 connected via USB.
-4. For each slot, use **"Choose a file…"** to pick the bin above and enter its offset in the Offset field.
+4. For each slot, use **"Choose a file…"** to pick the bin above and enter its offset in the Offset field. (If you built the merged image, put it in the **first** slot at `0x0` and leave the rest empty.)
 5. Press **Program** (Erase is done automatically).
 
-**Why these offsets:** `partitions.bin` is always placed at `0x8000` per the ESP32 layout, and `firmware.bin` is the app image loaded at `0x10000` (the start of the standard firmware region); the entry address is `0x40026b84`.
+**Why these offsets:** `bootloader.bin` is at `0x1000` on the ESP32-S2, the `partitions.bin` partition table is fixed at `0x8000`, the OTA data seed `boot_app0.bin` goes at `0xE000`, and `firmware.bin` is the app image loaded at `0x10000` (the start of the standard firmware region). The entry address of this firmware is `0x40026b84`.
 
 > ⚠️ **Notes**
 > - Connect the ESP32-S2 to the PC via USB and confirm that **Connect** succeeds before flashing.
