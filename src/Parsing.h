@@ -41,3 +41,4 @@ void loadProtocol();
 void saveNamedProtocol(String name, String text);   // append/overwrite a named protocol
 String listProtocols();                              // newline-separated "id|name" lines
 bool loadProtocolById(int id, String &outText);      // parse into pcrProtocol; return raw text
+bool deleteProtocolById(int id);                     // remove PROTO_XX.txt and its list entry

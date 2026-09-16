@@ -269,25 +269,37 @@ static String protoFileName(int id)
   return String(buf);
 }
 
-// Find the highest existing protocol id (scans PROTOLIST.TXT).
-static int maxProtoId()
+// Find the lowest free protocol id in 1..99 (reuses ids freed by deletion so
+// the limited slot space does not leak over time). Returns -1 when all used.
+static int firstFreeProtoId()
 {
+  bool used[100] = {false};
+
   File f = SPIFFS.open("/PROTOLIST.TXT", FILE_READ);
-  if (!f) return 0;
-  int mx = 0;
-  String line;
-  while (f.available()) {
-    line = f.readStringUntil('\n');
-    line.trim();
-    if (line.length() == 0) continue;
-    int colon = line.indexOf(':');
-    if (colon > 0) {
-      int id = line.substring(0, colon).toInt();
-      if (id > mx) mx = id;
+  if (f) {
+    String line;
+    while (f.available()) {
+      line = f.readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) continue;
+      int colon = line.indexOf(':');
+      if (colon > 0) {
+        int id = line.substring(0, colon).toInt();
+        if (id >= 1 && id < 100) used[id] = true;
+      }
     }
+    f.close();
   }
-  f.close();
-  return mx;
+
+  // Treat orphaned files (present on flash but missing from the list) as used.
+  for (int i = 1; i < 100; i++) {
+    if (!used[i] && SPIFFS.exists(protoFileName(i))) used[i] = true;
+  }
+
+  for (int i = 1; i < 100; i++) {
+    if (!used[i]) return i;
+  }
+  return -1;
 }
 
 void saveNamedProtocol(String name, String text)
@@ -295,9 +307,9 @@ void saveNamedProtocol(String name, String text)
   name.trim();
   if (name.length() == 0) name = "Unnamed";
 
-  int nextId = maxProtoId() + 1;
-  if (nextId > 99) {
-    Serial.println("saveNamedProtocol: too many protocols (max 99)");
+  int nextId = firstFreeProtoId();
+  if (nextId < 0) {
+    Serial.println("saveNamedProtocol: no free protocol slot (max 99)");
     return;
   }
 
@@ -366,6 +378,45 @@ String listProtocols()
   }
   f.close();
   return out;
+}
+
+bool deleteProtocolById(int id)
+{
+  if (id < 1) return false;
+
+  bool removed = false;
+
+  // Delete the protocol text file.
+  if (SPIFFS.exists(protoFileName(id))) {
+    removed = SPIFFS.remove(protoFileName(id));
+  }
+
+  // Remove the "id:name" line from the management list.
+  File lf = SPIFFS.open("/PROTOLIST.TXT", FILE_READ);
+  String content = "";
+  if (lf) { content = lf.readString(); lf.close(); }
+
+  String out = "";
+  while (content.length() > 0) {
+    int nl = content.indexOf('\n');
+    String l;
+    if (nl >= 0) { l = content.substring(0, nl); content = content.substring(nl + 1); }
+    else { l = content; content = ""; }
+    // strip trailing \r
+    if (l.length() > 0 && l[l.length() - 1] == '\r') l.remove(l.length() - 1);
+    int colon = l.indexOf(':');
+    if (colon > 0 && l.substring(0, colon).toInt() == id) {
+      removed = true;
+      continue; // drop this entry
+    }
+    out += l + "\n";
+  }
+
+  File lf2 = SPIFFS.open("/PROTOLIST.TXT", FILE_WRITE);
+  if (lf2) { lf2.print(out); lf2.close(); }
+
+  Serial.printf("deleteProtocolById: id=%d %s\n", id, removed ? "deleted" : "not found");
+  return removed;
 }
 
 bool loadProtocolById(int id, String &outText)

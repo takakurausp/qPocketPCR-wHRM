@@ -432,6 +432,7 @@ void handleLoadProtocol();
 void handleSaveProtocol();
 void handleGetProtocol();
 void handleSaveActiveProtocol();
+void handleDeleteProtocol();
 
 
 void setup() {
@@ -701,6 +702,7 @@ delay(2000);
   server.on("/listproto", handleListProtocols);
   server.on("/loadproto", handleLoadProtocol);
   server.on("/saveproto", HTTP_POST, handleSaveProtocol);
+  server.on("/deleteproto", HTTP_POST, handleDeleteProtocol);
   server.on("/getproto", handleGetProtocol);
   server.on("/saveprotocol", HTTP_POST, handleSaveActiveProtocol);
   server.begin();
@@ -2305,6 +2307,7 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__(<!DOCTYPE html>
         <select id="protoList" style="flex:1 1 auto; max-width:300px;"></select>
         <button class="ghost" id="refreshListBtn">Refresh</button>
         <button class="primary" id="loadNamedBtn">Load</button>
+        <button class="ghost" id="deleteNamedBtn">Delete</button>
       </div>
       <span class="status" id="loadStatus"></span>
     </div>
@@ -2771,14 +2774,16 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__(<!DOCTYPE html>
     var text = buildProtocolText();
     if (!text){ status.textContent = "Add a step first."; return; }
     status.textContent = "Saving...";
-    var blob = new Blob([text], {type:"text/plain"});
-    var fd = new FormData();
-    fd.append("name", name);
-    fd.append("protocol", blob, "PROTOCOL.TXT");
-    fetch("/saveproto", { method:"POST", body:fd })
+    // Send the protocol as a raw text body and the name as a query parameter.
+    // (multipart form-data is not parsed without an upload handler on the device)
+    fetch("/saveproto?name=" + encodeURIComponent(name), {
+        method:"POST",
+        headers:{"Content-Type":"text/plain"},
+        body:text
+      })
       .then(function(r){ return r.text().then(function(t){ return {ok:r.ok, t:t}; }); })
       .then(function(res){
-        status.textContent = res.ok ? ("Saved \"" + name + "\" to device memory") : "Save failed";
+        status.textContent = res.ok ? ("Saved \"" + name + "\" to device memory") : ("Save failed: " + res.t);
         loadProtocolList();
       })
       .catch(function(e){ status.textContent = "Save error: " + e.message; });
@@ -2831,6 +2836,24 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__(<!DOCTYPE html>
       .catch(function(e){ status.textContent = "Load error: " + e.message; });
   }
 
+  function deleteSelectedProtocol(){
+    var sel = document.getElementById("protoList");
+    var id = sel ? sel.value : "";
+    var status = document.getElementById("loadStatus");
+    if (!id){ status.textContent = "No protocol selected."; return; }
+    var label = (sel.selectedIndex >= 0 && sel.options[sel.selectedIndex])
+      ? sel.options[sel.selectedIndex].textContent : id;
+    if (!window.confirm("Delete saved protocol \"" + label + "\"?")) return;
+    status.textContent = "Deleting...";
+    fetch("/deleteproto?id=" + encodeURIComponent(id), { method:"POST" })
+      .then(function(r){ return r.text().then(function(t){ return {ok:r.ok, t:t}; }); })
+      .then(function(res){
+        status.textContent = res.ok ? "Deleted." : ("Delete failed: " + res.t);
+        loadProtocolList();
+      })
+      .catch(function(e){ status.textContent = "Delete error: " + e.message; });
+  }
+
   // Reflect the current active protocol into the editor on open.
   function loadCurrentProtocol(){
     fetch("/getproto")
@@ -2848,6 +2871,7 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__(<!DOCTYPE html>
   document.getElementById("downloadBtn").addEventListener("click", downloadProtocol);
   document.getElementById("saveNamedBtn").addEventListener("click", saveNamedToDevice);
   document.getElementById("loadNamedBtn").addEventListener("click", loadSelectedProtocol);
+  document.getElementById("deleteNamedBtn").addEventListener("click", deleteSelectedProtocol);
   document.getElementById("refreshListBtn").addEventListener("click", loadProtocolList);
 
   // live-update when melt fields change too
@@ -3035,7 +3059,9 @@ void handleLoadProtocol() {
 // --- Named protocol library: save the current builder form as a named protocol ---
 void handleSaveProtocol() {
   String name = server.arg("name");
-  String text = server.arg("protocol");
+  // Accept a raw text body (arg "plain", preferred) or a multipart field.
+  String text = server.arg("plain");
+  if (text.length() == 0) text = server.arg("protocol");
   if (text.length() == 0) {
     server.send(400, "text/plain", "No protocol data");
     return;
@@ -3044,6 +3070,21 @@ void handleSaveProtocol() {
   // Return the updated list so the UI can confirm which slot was used.
   String list = listProtocols();
   server.send(200, "text/plain", list);
+}
+
+// --- Named protocol library: delete one saved protocol by id ---
+void handleDeleteProtocol() {
+  int id = server.arg("id").toInt();
+  if (id < 1) {
+    server.send(400, "text/plain", "Invalid id");
+    return;
+  }
+  if (!deleteProtocolById(id)) {
+    server.send(404, "text/plain", "Protocol not found");
+    return;
+  }
+  // Return the updated list so the UI can refresh.
+  server.send(200, "text/plain", listProtocols());
 }
 
 // --- Active protocol: return the protocol that would run next ---
