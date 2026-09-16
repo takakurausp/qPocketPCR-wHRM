@@ -712,8 +712,9 @@ delay(2000);
   Serial.println("WiFi disabled (WIFI_ENABLED=0)");
 #endif
 
-  // Display the current WiFi startup mode on screen.
+  // Display the current WiFi startup mode on screen and wait for OK.
   draw_WIFI_display();
+  caseUX = CASE_RunWIFI;
 } // setup
 
 // ==================== MAIN LOOP ====================
@@ -1288,6 +1289,11 @@ case CASE_RunQPCR:
 
 
  
+case CASE_RunWIFI:
+runWifiDisplay();
+break; // CASE_RunWIFI
+
+
 case CASE_EditSettings:
 
      

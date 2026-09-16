@@ -19,7 +19,8 @@ CASE_RunComplete,
 CASE_InitBaseline,
 CASE_RunBaseline,
 CASE_RunInitUSB,
-CASE_InitRun
+CASE_InitRun,
+CASE_RunWIFI
 };
 
 
@@ -39,6 +40,8 @@ void drawCalibrationDisplay();
 void drawBaselineDisplay();
 
 void draw_WIFI_display();
+
+void runWifiDisplay();
 
 void drawProtocolDisplay();
 

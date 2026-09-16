@@ -479,8 +479,8 @@ void draw_WIFI_display()
   tft.setFreeFont(&GaudiSans7pt7b);
   tft.setTextDatum(TL_DATUM);
 
-  int y = 80;
-  const int lineH = 42;
+  int y = 72;
+  const int lineH = 28;
 
   if (wifiMode == 0) {
     // WiFi disabled (WIFI_ENABLED=0 / radio-law build)
@@ -508,6 +508,23 @@ void draw_WIFI_display()
   tft.drawString("OK", 160, 207);
 
   tft.setTextDatum(TL_DATUM);
+}
+
+// Wait for the OK button on the WiFi startup screen, then show the main menu.
+void runWifiDisplay()
+{
+  TS_Point p;
+
+  if (ts.touched()) { touched = true; p = ts.getPoint(); if (p.y > 0) tp = p; }
+
+  if (!ts.touched() && touched) {
+    touched = false;
+
+    if (PointInRect(tp, 95, 185, 130, 45)) {  // OK
+      drawMainDisplay();
+      caseUX = CASE_Main;
+    }
+  }
 }
 
 
