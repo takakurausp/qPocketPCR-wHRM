@@ -39,14 +39,17 @@ The virtual USB Mass Storage disk size is **128 KB** (256 sectors × 512 bytes),
 
 The FAT table is rebuilt on every file update so that all remaining clusters are chained into the data file, maximizing available space.
 
-### Web Control over WiFi (Access Point)
+### WiFi 搭載モードの Web 制御（アクセスポイント / クライアント）
 
-On startup the device broadcasts an access point:
+WiFi 搭載ビルド（`WIFI_ENABLED=1`、`-DWIFI_ENABLED=1`）では、起動時に以下のいずれかで Web 制御用ネットワークを形成します。どちらの振る舞いになるかは USB ドライブ上の `WIFI.TXT` の内容で決まります。
 
-- **SSID:** `qPocketPCR`
-- **Password:** `12345678`
+- **アクセスポイント（デフォルト）** — 装置自身がルーターとして振る舞います。
+  - **SSID:** `qPocketPCR`
+  - **Password:** `12345678`
+  - ブラウザで装置 IP（既定 `192.168.4.1`）を開きます。
+- **クライアントモード** — USB ドライブ上の `WIFI.TXT` に SSID と PASSWORD が両方記載されていて、起動時にそのアクセスポイントへの接続に成功した場合。装置は指定された WiFi ネットワークに接続し、Web サーバーはそのネットワーク経由で利用できます。このとき SSID はディスプレイに表示され、当該 SSID に登録されている場合 mDNS 経由でも到達できます（mDNS が無効な環境では、取得した IP をディスプレイで確認してください）。接続に失敗した場合は従来どおりアクセスポイントモードにフォールバックします。
 
-Connect a computer or phone to this network, then open a browser to the device IP (default `192.168.4.1`). Available endpoints:
+接続したら、ブラウザで装置の IP を開きます（アクセスポイント時は `192.168.4.1`、クライアント時は装置画面に表示される IP、または mDNS ホスト名）。利用可能なエンドポイント:
 
 | URL | Purpose |
 |-----|---------|
@@ -248,7 +251,7 @@ The `TLC59108` library is taken from the original qPocketPCR checkout as a sibli
 
 ### Flashing with the Adafruit WebSerial ESP Tool
 
-If you prefer to flash over a browser instead of `pio upload`, use the [Adafruit WebSerial ESP Tool](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/). It has five slots, but only **four** are used for a complete flash:
+`pio upload` の代わりにブラウザから書き込む場合は、[Adafruit WebSerial ESP Tool](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/) を使います。本ツールは 5 スロットを用意していますが、完全書き込みには**4 スロット**を使います:
 
 | Slot | File | Offset (hex) |
 |------|------|--------------|
@@ -257,7 +260,7 @@ If you prefer to flash over a browser instead of `pio upload`, use the [Adafruit
 | 3rd | `boot_app0.bin` | `0xE000` |
 | 4th | `firmware.bin` | `0x10000` |
 
-Leave the last slot empty (offset stays `0`). The `bootloader.bin`, `partitions.bin` and `firmware.bin` are in `.pio/build/esp32_s2_usb_native/`:
+最後のスロットは空のまま（Offset は `0` のまま）でかまいません。`bootloader.bin`、`partitions.bin`、`firmware.bin` は `.pio/build/esp32_s2_usb_native/` にあります:
 
 - `bootloader.bin` (~14.8 KB)
 - `partitions.bin` (~3 KB)
@@ -296,7 +299,7 @@ For Arduino IDE, first use **Sketch → Export Compiled Binary**, then pass `pPo
 
 ## Credits
 
-This firmware is **qPocketPCR-wHRM v0.1**, an independent fork of the original [qPocketPCR](https://github.com/GaudiLabs/qPocketPCR) (GaudiLabs, Urs Gaudenz), which remains at version **V1.1**. The fork adds High-Resolution Melting (HRM), 128 KB USB Mass Storage, WiFi web control, and named protocol storage.
+This firmware is **qPocketPCR-wHRM v0.24**, an independent fork of the original [qPocketPCR](https://github.com/GaudiLabs/qPocketPCR) (GaudiLabs, Urs Gaudenz), which remains at version **V1.1**. The fork adds High-Resolution Melting (HRM), 128 KB USB Mass Storage, WiFi web control, and named protocol storage.
 
 - Original project: qPocketPCR — GaudiLabs / Urs Gaudenz (GPL-3.0)
 - Fork & extensions: © Takakura Kōichi (GPL-3.0)
