@@ -45,8 +45,22 @@
   header { background:#fff; border-bottom:1px solid var(--line); padding:14px 20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
   header h1 { font-size:18px; margin:0; }
   header .spacer { flex:1 1 auto; }
-  header a { color:var(--accent); text-decoration:none; font-size:13px; white-space:nowrap; }
-  header a:hover { text-decoration:underline; }
+  header a { 
+    background: var(--accent); 
+    color: #fff; 
+    text-decoration: none; 
+    font-size: 13px; 
+    font-weight: 600; 
+    padding: 8px 16px; 
+    border-radius: 6px; 
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(47,111,176,0.2);
+    transition: background 0.2s ease;
+  }
+  header a:hover { 
+    background: var(--accent-dk); 
+    text-decoration: none; 
+  }
   .wrap { max-width:960px; margin:0 auto; padding:20px; }
   section { background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:18px; }
   h2 { font-size:15px; margin:0 0 12px; color:#222; }
@@ -146,7 +160,7 @@
     </div>
   </section>
 
-  <p class="credit">qPocketPCR-wHRM v0.1 &mdash; forked from qPocketPCR V1.1 (GaudiLabs); &copy; Takakura</p>
+  <p class="credit">qPocketPCR-wHRM v0.23 &mdash; forked from qPocketPCR V1.1 (GaudiLabs); &copy; Takakura</p>
 
 </div>
 
