@@ -157,8 +157,8 @@ FAT_TBL2B(0x2B, 0xFFF),
 
 
     // third entry is WIFI.TXT (WiFi configuration template)
-    'W' , 'I' , 'F' , 'I' , '.' , 'T' , 'X' , 'T',//file_name[8]
-    0x20,                 //file_extension[3]; padded with spaces (0x20)
+    'W' , 'I' , 'F' , 'I' , ' ' , ' ' , ' ' , ' ',//file_name[8]; padded with spaces (0x20)
+    'T' , 'X' , 'T',      //file_extension[3]
     0x20,                 //file attributes: FILE_ATTR_ARCHIVE
     0x00,                 //ignore
     FAT_MS2B(1,980),      //creation_time_10_ms
@@ -300,8 +300,20 @@ static void setEntryTimestamp(uint8_t* entry, time_t epoch);
 
 // Find directory entry index in root directory (0..MAX_ROOT_DIR_ENTRIES-1)
 // Returns entry index or -1 if not found
-static int findRootDirEntry(const char* name8)
+static int findRootDirEntry(const char* name)
 {
+  // Build the canonical 8-byte, space-padded, upper-case name field to compare.
+  // (The previous implementation memcmp'd 8 bytes straight from the caller's
+  // string literal, which read past the end of short names such as "WIFI".)
+  char padded[8];
+  memset(padded, ' ', sizeof(padded));
+  size_t n = strlen(name);
+  if (n > sizeof(padded)) n = sizeof(padded);
+  for (size_t j = 0; j < n; j++) {
+    char c = name[j];
+    padded[j] = (c >= 'a' && c <= 'z') ? (char)(c - 'a' + 'A') : c;
+  }
+
   for (int i = 0; i < MAX_ROOT_DIR_ENTRIES; i++) {
     uint8_t* entry = getRootDirEntryPtr(i);
     uint8_t firstByte = entry[0];
@@ -309,10 +321,37 @@ static int findRootDirEntry(const char* name8)
     if (firstByte == 0xE5) continue; // Deleted entry
     uint8_t attr = entry[11];
     if ((attr & 0x18) == 0) { // Regular file (not volume label 0x08, not dir 0x10)
-      if (memcmp(entry, name8, 8) == 0) {
+      if (memcmp(entry, padded, 8) == 0) {
         return i;
       }
     }
+  }
+  return -1;
+}
+
+// Returns true for a WIFI.TXT directory entry, accepting both the canonical
+// 8.3 encoding ("WIFI    " + "TXT") and the malformed legacy form that older
+// firmware versions wrote with "WIFI.TXT" in the 8-byte name field.
+static bool isWifiEntry(const uint8_t* entry)
+{
+  if (entry[0] == 0x00 || entry[0] == 0xE5) return false;
+  if ((entry[11] & 0x18) != 0) return false; // not a regular file
+  const char* tag = "WIFI";
+  for (int j = 0; j < 4; j++) {
+    char c = (char)entry[j];
+    if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+    if (c != tag[j]) return false;
+  }
+  return true;
+}
+
+static int findWifiEntry()
+{
+  for (int i = 0; i < MAX_ROOT_DIR_ENTRIES; i++) {
+    uint8_t* entry = getRootDirEntryPtr(i);
+    if (entry[0] == 0x00) break;
+    if (entry[0] == 0xE5) continue;
+    if (isWifiEntry(entry)) return i;
   }
   return -1;
 }
@@ -400,7 +439,7 @@ void buildFatTable()
   }
 
   // 2. Allocate clusters for WIFI.TXT if present (fixed capacity, not size-based)
-  int wifiIdx = findRootDirEntry("WIFI");
+  int wifiIdx = findWifiEntry();
   if (wifiIdx >= 0) {
     uint8_t* entry = getRootDirEntryPtr(wifiIdx);
     uint16_t startCluster = entry[26] | (entry[27] << 8);
@@ -457,6 +496,11 @@ void init_msc_disk()
   // Write PROTOCOL_TEMPLATE into the cluster 2 data sector
   int protoSector = CLUSTER_TO_SECTOR(PROTOCOL_START_CLUSTER);
   memcpy(msc_disk[protoSector], PROTOCOL_TEMPLATE, sizeof(PROTOCOL_TEMPLATE) - 1);
+
+  // Write the WIFI.TXT template into its own cluster so the host sees an
+  // editable file as soon as the virtual drive is mounted.
+  int wifiSector = CLUSTER_TO_SECTOR(WIFI_TXT_START_CLUSTER);
+  memcpy(msc_disk[wifiSector], WIFI_TEMPLATE, sizeof(WIFI_TEMPLATE) - 1);
 
   // Build the FAT12 table
   buildFatTable();
@@ -825,7 +869,7 @@ void readWifiConfig()
   wifi_config_ssid[0]      = '\0';
   wifi_config_password[0]  = '\0';
 
-  int wifiIdx = findRootDirEntry("WIFI");
+  int wifiIdx = findWifiEntry();
   if (wifiIdx < 0) {
     // No WIFI.TXT yet - caller will create a template.
     return;
@@ -884,11 +928,54 @@ void readWifiConfig()
 }
 
 // Create an empty WIFI.TXT template in the USB disk image if one does not exist.
+// Also repairs legacy entries written by older firmware (which stored "WIFI.TXT"
+// in the 8-byte name field and left the template content empty).
 void createWifiConfigTemplate()
 {
-  int wifiIdx = findRootDirEntry("WIFI");
+  const char* tmpl = WIFI_TEMPLATE;
+  int tlen = strlen(tmpl);
+
+  int wifiIdx = findWifiEntry();
   if (wifiIdx >= 0) {
-    // Existing file - keep it as-is.
+    uint8_t* entry = getRootDirEntryPtr(wifiIdx);
+
+    // Canonicalise a legacy entry that stored the dot in the name field.
+    bool legacy = (entry[4] != ' ');
+    if (legacy) {
+      memcpy(entry, "WIFI    ", 8);
+      memcpy(entry + 8, "TXT", 3);
+      Serial.println("WIFI.TXT: normalised legacy directory entry");
+    }
+
+    // Remove duplicates that older firmware appended on every boot.
+    for (int i = wifiIdx + 1; i < MAX_ROOT_DIR_ENTRIES; i++) {
+      uint8_t* e = getRootDirEntryPtr(i);
+      if (e[0] == 0x00) break;
+      if (e[0] == 0xE5) continue;
+      if (isWifiEntry(e)) {
+        e[0] = 0xE5;
+        Serial.println("WIFI.TXT: removed duplicate directory entry");
+      }
+    }
+
+    // Fill in the factory template when the file is new or was left empty by an
+    // older firmware version (zero size, or zero first byte in its cluster).
+    int startCluster = entry[26] | (entry[27] << 8);
+    bool empty = ((entry[28] | entry[29]) == 0);
+    if (!empty && startCluster >= 2 && startCluster < DISK_SECTOR_COUNT) {
+      empty = (msc_disk[CLUSTER_TO_SECTOR(startCluster)][0] == 0);
+    }
+    if (legacy || empty) {
+      uint8_t* c = &msc_disk[CLUSTER_TO_SECTOR(WIFI_TXT_START_CLUSTER)][0];
+      memset(c, 0, DISK_SECTOR_SIZE);
+      memcpy(c, tmpl, tlen);
+      entry[28] = FAT_U8(tlen);
+      entry[29] = FAT_U8(tlen >> 8);
+      entry[30] = 0;
+      entry[31] = 0;
+    }
+
+    buildFatTable();
     return;
   }
 
@@ -902,27 +989,17 @@ void createWifiConfigTemplate()
 
   uint8_t* entry = getRootDirEntryPtr(freeSlot);
   memset(entry, 0, 32);
-  memcpy(entry, "WIFI.TXT", 8);   // bytes 0-7: filename
+  memcpy(entry, "WIFI    ", 8);   // bytes 0-7: filename (space padded)
+  memcpy(entry + 8, "TXT", 3);    // bytes 8-10: extension
   entry[11] = 0x20;              // byte 11: attributes (archive)
-
-  // Timestamps / dates (FAT_YMD2B/FAT_HMS2B each emit two bytes).
-  entry[4]  = FAT_U8(1980);      // creation time low (placeholder)
-  entry[5]  = FAT_HMS2B(12,0,0); // create_time_hms
-  entry[6]  = FAT_YMD2B(2037,1,1);// create_time_ymd
-  entry[7]  = FAT_YMD2B(2037,1,1);// last_access_ymd
-  entry[8]  = 0;                 // extended attributes (high byte of start cluster)
-  entry[9]  = FAT_HMS2B(12,0,0); // last_modified_hms
-  entry[10] = FAT_YMD2B(2037,1,1);// last_modified_ymd
 
   // Start cluster (bytes 26-27) and file size (bytes 28-31).
   entry[26] = FAT_U8(WIFI_TXT_START_CLUSTER);
   entry[27] = 0;
-  const char* tmpl = WIFI_TEMPLATE;
-  int tlen = strlen(tmpl);
   entry[28] = FAT_U8(tlen);
   entry[29] = FAT_U8(tlen >> 8);
-  entry[30] = FAT_U8(tlen >> 16);
-  entry[31] = FAT_U8(tlen >> 24);
+  entry[30] = 0;
+  entry[31] = 0;
 
   // Write template content into the WIFI.TXT cluster.
   uint8_t* c = &msc_disk[CLUSTER_TO_SECTOR(WIFI_TXT_START_CLUSTER)][0];
@@ -1055,13 +1132,72 @@ void Service_USB()
   }
 
 
+// Read the raw WIFI.TXT content from the USB disk image (empty String if absent).
+static String getWifiText()
+{
+  int wifiIdx = findWifiEntry();
+  if (wifiIdx < 0) return "";
+
+  uint8_t* entry = getRootDirEntryPtr(wifiIdx);
+  int len = entry[28] | (entry[29] << 8);
+  int maxLen = (DATAQPCR_START_CLUSTER - WIFI_TXT_START_CLUSTER) * DISK_SECTOR_SIZE;
+  if (len > maxLen) len = maxLen;
+  if (len <= 0) return "";
+
+  int cluster = entry[26] | (entry[27] << 8);
+  if (cluster < 2 || cluster >= DISK_SECTOR_COUNT) return "";
+  if (msc_disk[CLUSTER_TO_SECTOR(cluster)][0] == 0) return ""; // empty file
+
+  String out;
+  int total = 0;
+  while (total < len && cluster >= 2 && cluster < DISK_SECTOR_COUNT) {
+    uint8_t* ptr = &msc_disk[CLUSTER_TO_SECTOR(cluster)][0];
+    int chunk = DISK_SECTOR_SIZE;
+    if (total + chunk > len) chunk = len - total;
+    for (int i = 0; i < chunk; i++) out += (char)ptr[i];
+    total += chunk;
+    if (cluster == WIFI_TXT_START_CLUSTER) break; // single-cluster file
+    cluster = extract12BitNumber(cluster);
+    if (cluster >= 0xFF8) break;
+  }
+  return out;
+}
+
+// Write text back into WIFI.TXT (single 512-byte cluster) and update its size.
+static void addWifiToFAT(String str)
+{
+  int wifiIdx = findWifiEntry();
+  if (wifiIdx < 0) return;
+
+  uint8_t* entry = getRootDirEntryPtr(wifiIdx);
+  uint8_t* c = &msc_disk[CLUSTER_TO_SECTOR(WIFI_TXT_START_CLUSTER)][0];
+
+  unsigned long len = str.length();
+  if (len > DISK_SECTOR_SIZE) len = DISK_SECTOR_SIZE;
+
+  memset(c, 0, DISK_SECTOR_SIZE);
+  for (unsigned long i = 0; i < len; i++) c[i] = str[i];
+
+  entry[28] = FAT_U8(len);
+  entry[29] = FAT_U8(len >> 8);
+  entry[30] = 0;
+  entry[31] = 0;
+
+  buildFatTable();
+}
+
 void InitializeUSBFiles()
 {
 
   readMscFromSPIFFS(msc_disk);
   String protoString=getConfig();
+  // Preserve the user's WIFI.TXT (SSID/PASSWORD) across the rebuild. Without this
+  // init_msc_disk() would reset WIFI.TXT to the empty template before readWifiConfig()
+  // gets a chance to read it at boot.
+  String wifiString=getWifiText();
   init_msc_disk();
   addProtoToFAT(protoString);
+  if (wifiString.length() > 0) addWifiToFAT(wifiString);
 
 
 }

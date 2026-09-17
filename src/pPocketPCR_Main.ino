@@ -3159,6 +3159,17 @@ void handleUpload() {
     } else {
       Serial.println("File was not open!");
     }
+
+    // Mirror the uploaded protocol into the virtual USB drive so the builder
+    // and the running protocol agree with what was just uploaded.
+    File rf = SPIFFS.open("/PROTOCOL.TXT", FILE_READ);
+    if (rf) {
+      String text = rf.readString();
+      rf.close();
+      addProtoToFAT(text);
+      saveMscToSPIFFS(msc_disk);
+      newConfigAvailable = true;
+    }
   }
 }
 
@@ -3228,11 +3239,14 @@ void handleDeleteProtocol() {
 // --- Active protocol: return the protocol that would run next ---
 // Used by the builder to pre-fill the editor with the current protocol.
 void handleGetProtocol() {
-  String text;
-  File f = SPIFFS.open("/PROTOCOL.TXT", FILE_READ);
-  if (f) { text = f.readString(); f.close(); }
-  // Fall back to the virtual USB drive's PROTOCOL.TXT, then the factory template.
-  if (text.length() == 0) text = getConfig();
+  // Prefer the PROTOCOL.TXT visible on the virtual USB drive so the builder
+  // reflects the file the user actually edits there. Fall back to a protocol
+  // stored on SPIFFS (web upload) and finally to the factory template.
+  String text = getConfig();
+  if (text.length() == 0) {
+    File f = SPIFFS.open("/PROTOCOL.TXT", FILE_READ);
+    if (f) { text = f.readString(); f.close(); }
+  }
   if (text.length() == 0) text = PROTOCOL_TEMPLATE;
   server.send(200, "text/plain", text);
 }

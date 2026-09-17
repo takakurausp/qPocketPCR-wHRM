@@ -242,20 +242,26 @@ void parseConfig(String InputStream)
 }
 void loadProtocol()
 {
-  // SPIFFS に PROTOCOL.TXT があれば優先して読み込む（Web アップロード対応）
+  // 仮想USBドライブ上の PROTOCOL.TXT（ユーザーが直接編集するファイル）を最優先で読み込む
+  String myConfig = getConfig();
+  if (myConfig.length() > 0) {
+    Serial.printf("loadProtocol: from USB disk (%d bytes)\n", myConfig.length());
+    parseConfig(myConfig);
+    return;
+  }
+
+  // 次に Web アップロード等で SPIFFS に保存された PROTOCOL.TXT を読む
   File protoFile = SPIFFS.open("/PROTOCOL.TXT", FILE_READ);
   if (protoFile) {
-    String myConfig = protoFile.readString();
+    myConfig = protoFile.readString();
     protoFile.close();
     Serial.printf("loadProtocol: from SPIFFS (%d bytes)\n", myConfig.length());
     parseConfig(myConfig);
     return;
   }
 
-  // なければ USB ディスクイメージから読み込む
-  String myConfig = getConfig();
-  Serial.printf("loadProtocol: from USB disk (%d bytes)\n", myConfig.length());
-  parseConfig(myConfig);
+  // どちらも無い場合は空で解析
+  parseConfig("");
 }
 
 // ================= Named protocol library =================
