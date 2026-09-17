@@ -46,6 +46,11 @@ extern int PCR_Times[5];
 extern float PCR_Temperatures[5];
 extern int PCR_Cycles;
 
+// WiFi / Web Server enable flag (keep the default in sync with the main sketch).
+#ifndef WIFI_ENABLED
+#define WIFI_ENABLED 1
+#endif
+
 // WiFi startup mode and IP, defined in the main sketch (.ino).
 extern int wifiMode;       // 0 = disabled, 1 = access point, 2 = client
 extern String wifiIP;      // active interface IP (empty when disabled)
@@ -261,10 +266,11 @@ void drawSubMenuDisplay()
  tft.fillRoundRect(30,20+1*52,260,45,12,TFT_BUTTONGREY);
  tft.drawString("..",320/2,40+1*52);
  
+#if WIFI_ENABLED
  tft.setFreeFont(&neuropol12pt7b); 
  tft.fillRoundRect(30,20+2*52,260,45,12,TFT_BUTTONGREY);
- tft.setCursor (60,50+2*52);
- tft.drawString("..",320/2,40+2*52);
+ tft.drawString("WIFI INFO",320/2,40+2*52);
+#endif
 
   tft.setFreeFont(&neuropol10pt7b); 
 
@@ -327,11 +333,13 @@ if(ts.touched()) {touched=true;p=ts.getPoint();if(p.y>0) tp = p;}
   
   }
 
-  if (PointInRect(tp, 30,20+2*52,260,45))  // ..
+#if WIFI_ENABLED
+  if (PointInRect(tp, 30,20+2*52,260,45))  // WIFI INFO
   {
- 
-
+   draw_WIFI_display();
+   caseUX = CASE_RunWIFI;
   }
+#endif
 
 if (PointInRect(tp, 110,20+3*52,100,64))  // BACK
   {
