@@ -52,7 +52,7 @@
 // ==================== CONSTANTS AND CONFIGURATION ====================
 
 // Version and system configuration
-#define VERSION_STRING  "v0.23"
+#define VERSION_STRING  "v0.24"
 #define FORMAT_SPIFFS_IF_FAILED true
 #define FILESYSTEM SPIFFS
 
@@ -2917,7 +2917,7 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__(<!DOCTYPE html>
   loadProtocolList();
 })();
 </script>
-<footer style="margin-top:2em;font-size:11px;color:#888;">qPocketPCR-wHRM v0.23 &mdash; forked from qPocketPCR V1.1 (GaudiLabs); &copy; Takakura</footer>
+<footer style="margin-top:2em;font-size:11px;color:#888;">qPocketPCR-wHRM v0.24 &mdash; forked from qPocketPCR V1.1 (GaudiLabs); &copy; Takakura</footer>
 </body>
 </html>
 )__BUILDER_HTML__";

@@ -228,10 +228,23 @@ See [`analysis/README.md`](analysis/README.md) for the full eDNA qPCR workflow, 
 The firmware is built with [PlatformIO](https://platformio.org/) targeting `esp32-s2-usb-native`:
 
 ```bash
-pio run                 # build firmware.bin
+pio run                 # build firmware.bin (WiFi enabled)
 pio run -t upload       # flash to device (connect via USB)
 pio monitor             # serial console at 115200 baud
 ```
+
+The release binaries are produced from two dedicated environments, which only differ in `WIFI_ENABLED`:
+
+| Environment | Output directory | Binaries |
+|-------------|------------------|----------|
+| `esp32_s2_usb_native_wifi` | `.pio/build/esp32_s2_usb_native_wifi/` | `dist/v0.24/*_wifi_enabled.bin` |
+| `esp32_s2_usb_native_nofw` | `.pio/build/esp32_s2_usb_native_nofw/` | `dist/v0.24/*_wifi_disabled.bin` |
+
+```bash
+pio run -e esp32_s2_usb_native_wifi -e esp32_s2_usb_native_nofw
+```
+
+The `TLC59108` library is taken from the original qPocketPCR checkout as a sibling directory (`../qPocketPCR-main/Software/Libraries/TLC59108-main`); adjust that `lib_deps` entry if your checkout lives elsewhere.
 
 ### Flashing with the Adafruit WebSerial ESP Tool
 

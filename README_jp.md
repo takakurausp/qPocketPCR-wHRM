@@ -249,10 +249,23 @@ eDNA qPCR のワークフロー全体・設定形式・HRM/Tm の詳細は [`ana
 ファームウェアは [PlatformIO](https://platformio.org/) で `esp32-s2-usb-native` 対象にビルドします：
 
 ```bash
-pio run                 # firmware.bin をビルド
+pio run                 # firmware.bin をビルド（WiFi有効）
 pio run -t upload       # USB接続で装置へフラッシュ
 pio monitor             # 115200 ボーのシリアルコンソール
 ```
+
+リリース用バイナリは、`WIFI_ENABLED` だけが異なる次の2つの環境でビルドします：
+
+| 環境 | 出力ディレクトリ | バイナリ |
+|------|------------------|----------|
+| `esp32_s2_usb_native_wifi` | `.pio/build/esp32_s2_usb_native_wifi/` | `dist/v0.24/*_wifi_enabled.bin` |
+| `esp32_s2_usb_native_nofw` | `.pio/build/esp32_s2_usb_native_nofw/` | `dist/v0.24/*_wifi_disabled.bin` |
+
+```bash
+pio run -e esp32_s2_usb_native_wifi -e esp32_s2_usb_native_nofw
+```
+
+`TLC59108` ライブラリは原版 qPocketPCR のチェックアウトを兄弟ディレクトリ（`../qPocketPCR-main/Software/Libraries/TLC59108-main`）として参照します。チェックアウト位置が違う場合は `lib_deps` の該当行を書き換えてください。
 
 ### Adafruit WebSerial ESP Tool での書き込み
 
