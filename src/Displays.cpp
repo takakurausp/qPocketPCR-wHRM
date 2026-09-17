@@ -49,6 +49,7 @@ extern int PCR_Cycles;
 // WiFi startup mode and IP, defined in the main sketch (.ino).
 extern int wifiMode;       // 0 = disabled, 1 = access point, 2 = client
 extern String wifiIP;      // active interface IP (empty when disabled)
+extern const char* ap_ssid; // access point SSID, defined in the main sketch
 
 bool PointInRect(TS_Point point, int x, int y, int h, int v)
 
@@ -480,25 +481,22 @@ void draw_WIFI_display()
   tft.setTextDatum(TL_DATUM);
 
   int y = 72;
-  const int lineH = 28;
+  const int lineH = 30;
 
   if (wifiMode == 0) {
     // WiFi disabled (WIFI_ENABLED=0 / radio-law build)
-    tft.drawString("Mode: Disabled", 30, y);
-    tft.drawString("(WiFi/AP/Web server off)", 30, y + lineH);
-    tft.drawString("No IP address assigned.", 30, y + lineH * 2);
+    tft.drawString("WiFi disabled", 30, y);
+    tft.drawString("(WiFi / AP / Web off)", 30, y + lineH);
   } else if (wifiMode == 1) {
     // Access Point mode
-    tft.drawString("Mode: Access Point", 30, y);
-    tft.drawString("SSID: qPocketPCR", 30, y + lineH);
+    tft.drawString("AP mode", 30, y);
+    tft.drawString("SSID: " + String(ap_ssid), 30, y + lineH);
     tft.drawString("IP: " + wifiIP, 30, y + lineH * 2);
-    tft.drawString("Connect to configure.", 30, y + lineH * 3);
   } else if (wifiMode == 2) {
     // Client mode
-    tft.drawString("Mode: Client", 30, y);
-    tft.drawString("IP: " + wifiIP, 30, y + lineH);
-    tft.drawString("Connected to AP.", 30, y + lineH * 2);
-    tft.drawString("NTP time sync active.", 30, y + lineH * 3);
+    tft.drawString("Client mode", 30, y);
+    tft.drawString("SSID: " + String(wifi_config_ssid), 30, y + lineH);
+    tft.drawString("IP: " + wifiIP, 30, y + lineH * 2);
   }
 
   // Back hint button at the bottom
