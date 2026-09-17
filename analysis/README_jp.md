@@ -1,7 +1,6 @@
 # qPocketPCR による環境DNA定量qPCR — ワークフロー
 
-`qPocketPCR` (GaudiLabs, https://gaudi.ch/PocketPCR/) で得られた生データ `DATA.TXT`
-を処理し、**環境DNA (eDNA) の定量**を行う一連のワークフロー。
+本リポジトリのファームウェア [qPocketPCR-wHRM](https://github.com/takakurausp/qPocketPCR-wHRM) （およびその元となっている[qPocketPCR](GaudiLabs, https://github.com/GaudiLabs/qPocketPCR)）から得られた生データ `DATA.TXT`（装置上では `DATAQPCR.TXT` としても公開）を処理し、**環境DNA (eDNA) の定量**を行う一連のワークフロー。
 
 単色検出 (Cyber green / SYBR green) であるため、**標的領域と標準(standard)アンプロン
 は別ウェル**に入れる。標的には「検出範囲よりも少しだけ広い範囲を増幅したもの」を使い、
@@ -26,8 +25,8 @@ ecDNA_qpcr/
 
 ## qPocketPCR の生データ形式
 
-装置は USB Mass Storage ドライブとして `DATA.TXT` (`DATAQPCR.TXT`) を書き出す。
-ファーム v1.2+ の形式は CSV (旧形式・温度列なしにも自動対応):
+装置は USB Mass Storage ドライブとして `DATA.TXT`（`DATAQPCR.TXT`）を書き出す。
+ファームウェア `qPocketPCR-wHRM v0.24`（および、同じく Temp 列を出力する互換ファームウェア）の形式は CSV（Temp 列なしの旧形式にも自動対応）:
 
 ```
 Protocol name: <プロトコル名>       ← 先頭行 (任意)
@@ -37,7 +36,7 @@ Cycle, Time, Temp, Sensor1, Sensor2, ..., Sensor8
 
 - **Cycle**: PCRサイクル (整数)。1サイクル内に複数キャプチャがあれば同じ値が並ぶ
 - **Time**: 測定開始からの秒数
-- **Temp**: キャプチャ時点の実測ブロック温度 °C (v1.2+。融解/HRM解析に必須)
+- **Temp**: キャプチャ時点の実測ブロック温度 °C（`qPocketPCR-wHRM` で出力・融解/HRM解析に必須。Temp 列がない場合は qPCR 定量のみ）
 - **Sensor1〜8**: 8ウェルの蛍光値 (wellFactor 補正済み)
 
 ### 増幅→融解 (HRM) の1ランと自動分離
@@ -66,6 +65,17 @@ Cycle, Time, Temp, Sensor1, Sensor2, ..., Sensor8
 6. **未知サンプルの標本量推定** — 回帰式に Ct を代入
 7. **結果出力** — TSV / Markdown レポート + 増幅曲線図 & 標準カーブ図
 
+### 注: 本解析ワークフローの位置づけ
+
+このディレクトリは**装置とは独立したデスクトップ解析ワークフロー**です。装置ファームウェア
+(`qPocketPCR-wHRM`) のビルド・書き込み動作そのものをテストするものではありません。
+「装置能力」や「装置テスト」の基準資料として使う場合は、
+
+- 装置側の値はファームウェアが書き出す `DATA.TXT` / `DATAQPCR.TXT` そのもの
+- 解析側の値は、このスクリプト群がそこから算出した Ct・定量・Tm
+
+であり、両者を混同しないでください。装置能力の評価に使う際は、測定条件・較定・プロトコルを
+この README に合わせて実機で再現できるよう手順を明記してください。
 ## 使い方
 
 ### (A) 実機データで実行

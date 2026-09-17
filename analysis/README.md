@@ -1,8 +1,10 @@
 # Environmental DNA Quantitative PCR with qPocketPCR — Workflow
 
-This is a series of workflows that process the raw data `DATA.TXT` obtained with
-[`qPocketPCR`](https://gaudi.ch/PocketPCR/) (GaudiLabs, https://gaudi.ch/PocketPCR/)
-and perform **environmental DNA (eDNA) quantification**.
+This is a series of workflows that process the raw data `DATA.TXT` obtained with the
+firmware in this repository, [qPocketPCR-wHRM](https://github.com/takakurausp/qPocketPCR-wHRM),
+and its upstream [`qPocketPCR`](https://github.com/GaudiLabs/qPocketPCR) (GaudiLabs,
+Urs Gaudenz). The device also presents the same data as `DATAQPCR.TXT` on its USB Mass
+Storage drive. These workflows perform **environmental DNA (eDNA) quantification**.
 
 Because detection uses a single channel (Cyber Green / SYBR Green), the **target region**
 and the **standard amplicon** must be placed in **separate wells**. The target uses a
@@ -29,7 +31,8 @@ ecDNA_qpcr/
 ## qPocketPCR Raw Data Format
 
 The device writes `DATA.TXT` (`DATAQPCR.TXT`) as a USB Mass Storage drive. The firmware
-v1.2+ format is CSV (also auto-detects the older format without a temperature column):
+`qPocketPCR-wHRM v0.24` (and compatible firmware that also outputs a Temp column) format is
+CSV (also auto-detects the older format without a temperature column):
 
 ```
 Protocol name: <protocol name>       <- first line (optional)
@@ -39,7 +42,7 @@ Cycle, Time, Temp, Sensor1, Sensor2, ..., Sensor8
 
 - **Cycle**: PCR cycle (integer). If multiple captures occur within one cycle, the same value repeats.
 - **Time**: Seconds since measurement start.
-- **Temp**: Measured block temperature at capture time in °C (v1.2+; required for melting/HRM analysis).
+- **Temp**: Measured block temperature at capture time in °C (output by `qPocketPCR-wHRM`; required for melting/HRM analysis. If the Temp column is absent, only qPCR quantification is performed).
 - **Sensor1–8**: Fluorescence values for the 8 wells (wellFactor-corrected).
 
 ### Amplification → Melting (HRM) in a single run, with automatic separation
@@ -69,6 +72,20 @@ single channel, multiplexing is not possible; targets and standards go in separa
 5. **Standard-curve regression and PCR efficiency calculation** — linear regression of `log10(quantity)` vs Ct
 6. **Quantify unknown samples** — substitute Ct into the regression equation
 7. **Output results** — TSV / Markdown report + amplification curve plot & standard curve plot
+
+### Note: What this analysis workflow is (and is not)
+
+This directory is a **desktop analysis workflow independent of the device**. It does not test
+the device firmware (`qPocketPCR-wHRM`) build or flashing behavior itself. If you use it as a
+reference for "device capability" or "device testing," keep these straight:
+
+- The device-side values are the `DATA.TXT` / `DATAQPCR.TXT` written by the firmware.
+- The analysis-side values are the Ct, quantification, and Tm that these scripts compute from
+  that data.
+
+Do not conflate the two. When using this for device-capability evaluation, document the
+measurement conditions, calibration, and protocol so the run can be reproduced on the device
+using this README.
 
 ## Usage
 
