@@ -911,9 +911,17 @@ void readWifiConfig()
   String line, key, value;
   int pos = 0;
   while (pos < total) {
-    char* nl = (char*)memchr(buf + pos, '\n', total - pos);
-    if (nl == NULL) { nl = buf + total; } else { *nl = '\0'; nl = buf + (nl - buf); }
-    line = String(buf + pos);
+    // Find the end of this line.
+    int nl = -1;
+    for (int i = pos; i < total; i++) {
+      if (buf[i] == '\n') { nl = i; break; }
+    }
+    int end = (nl >= 0) ? nl : total;
+    if (end > pos && buf[end - 1] == '\r') end--; // tolerate CRLF line endings
+
+    line = "";
+    for (int i = pos; i < end; i++) line += buf[i];
+
     parseWifiLine(line.c_str(), key, value);
     if (key.equalsIgnoreCase("SSID")) {
       strncpy(wifi_config_ssid, value.c_str(), sizeof(wifi_config_ssid) - 1);
@@ -922,9 +930,14 @@ void readWifiConfig()
       strncpy(wifi_config_password, value.c_str(), sizeof(wifi_config_password) - 1);
       wifi_config_password[sizeof(wifi_config_password) - 1] = '\0';
     }
-    pos += nl - (buf + pos); // advance past this line
+
+    pos = (nl >= 0) ? nl + 1 : total; // advance past this line
   }
   free(buf);
+
+  Serial.printf("readWifiConfig: SSID='%s', PASSWORD %s\n",
+                wifi_config_ssid,
+                wifi_config_password[0] ? "(set)" : "(empty)");
 }
 
 // Create an empty WIFI.TXT template in the USB disk image if one does not exist.
