@@ -2816,9 +2816,9 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__(<!DOCTYPE html>
       .then(function(res){
         status.textContent = res.ok
           ? "Saved to device USB storage (PROTOCOL.TXT)"
-          : ("Save failed: " + res.t);
+          : "Could not save. Check your WiFi connection and try again.";
       })
-      .catch(function(e){ status.textContent = "Save error: " + e.message; });
+      .catch(function(e){ status.textContent = "Could not save. Check your WiFi connection and try again."; });
   }
 
   function saveNamedToDevice(){
@@ -2836,10 +2836,10 @@ const char* BUILDER_HTML = R"__BUILDER_HTML__(<!DOCTYPE html>
       })
       .then(function(r){ return r.text().then(function(t){ return {ok:r.ok, t:t}; }); })
       .then(function(res){
-        status.textContent = res.ok ? ("Saved \"" + name + "\" to device memory") : ("Save failed: " + res.t);
+        status.textContent = res.ok ? ("Saved \"" + name + "\" to device memory") : "Could not save. Check your WiFi connection and try again.";
         loadProtocolList();
       })
-      .catch(function(e){ status.textContent = "Save error: " + e.message; });
+      .catch(function(e){ status.textContent = "Could not save. Check your WiFi connection and try again."; });
   }
 
   // ---------- saved protocol library ----------
