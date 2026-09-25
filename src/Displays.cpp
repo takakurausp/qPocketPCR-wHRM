@@ -707,7 +707,7 @@ if (status_flag){
   {
   tft.setTextColor(TFT_GREEN, TFT_WHITE);
  tft.print(" ");
- tft.print(char(errorMark));
+ tft.print(char(checkMark));
  tft.print(" ");
     }
   
