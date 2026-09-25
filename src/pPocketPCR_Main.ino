@@ -1936,20 +1936,45 @@ void initMask()
 
 }
 
-int countCaptures()
-{int captureCounter=0;
-
-for (int stepCounter = 0; stepCounter < pcrProtocol.stepCount; stepCounter++) {
-
-if (pcrProtocol.steps[stepCounter].capture)
-{if ((stepCounter<=pcrProtocol.repeatEnd-1)&&(stepCounter>=pcrProtocol.repeatStart-1))
-captureCounter=captureCounter+pcrProtocol.cycleCount; else
-captureCounter=captureCounter+1;
-  
-  }
-
+// Index of the first MELT (HRM) step in pcrProtocol.steps[]. MELT points are
+// appended after the PCR steps, so they occupy the last meltPoints entries.
+// Without a MELT block this returns stepCount (i.e. no melt phase).
+int meltStartStep()
+{
+  if (!pcrProtocol.melt || pcrProtocol.meltPoints <= 0) return pcrProtocol.stepCount;
+  return pcrProtocol.stepCount - pcrProtocol.meltPoints;
 }
+
+// Fluorescence captures produced by steps [fromIdx, toIdx), applying the
+// REPEAT/CYCLES multiplier only to steps inside the repeat region.
+static int countCapturesInRange(int fromIdx, int toIdx)
+{
+  int captureCounter = 0;
+  for (int stepCounter = fromIdx; stepCounter < toIdx && stepCounter < pcrProtocol.stepCount; stepCounter++) {
+    if (!pcrProtocol.steps[stepCounter].capture) continue;
+    if ((stepCounter <= pcrProtocol.repeatEnd - 1) && (stepCounter >= pcrProtocol.repeatStart - 1))
+      captureCounter += pcrProtocol.cycleCount;
+    else
+      captureCounter += 1;
+  }
   return captureCounter;
+}
+
+// Captures produced by the PCR (pre-melt) steps only.
+int pcrCaptureCount()
+{
+  return countCapturesInRange(0, meltStartStep());
+}
+
+// Captures produced by the MELT (HRM) ramp (one per expanded melt point).
+int meltCaptureCount()
+{
+  return (pcrProtocol.melt && pcrProtocol.meltPoints > 0) ? pcrProtocol.meltPoints : 0;
+}
+
+int countCaptures()
+{
+  return pcrCaptureCount() + meltCaptureCount();
 }
 
 
@@ -1980,23 +2005,35 @@ const int margin_top = 30;
  tftbuff.setTextColor(TFT_BLACK,TFT_WHITE);
 
 
+  // Split the run into a PCR phase and a MELT (HRM) phase. Each phase is drawn
+  // with the full grid width so the PCR curves are not squeezed into the left
+  // corner by the many (e.g. 151) HRM points. Once the state machine reaches
+  // the first melt step the graph switches to the HRM phase automatically.
+  bool inMelt = (pcrProtocol.melt && pcrProtocol.meltPoints > 0 &&
+                 PCRstep >= meltStartStep());
+  int phaseStart = inMelt ? pcrCaptureCount() : 0;
+  int phaseCount = inMelt ? meltCaptureCount() : pcrCaptureCount();
+
   int division=1;
-  // Guard against a protocol with no capture steps: captures==0 would make the
-  // divisor below zero and crash the ESP32 (integer divide by zero).
-  int captureCount = captures > 0 ? captures : 1;
+  // Guard against a protocol with no capture steps: captureCount==0 would make
+  // the divisor below zero and crash the ESP32 (integer divide by zero).
+  int captureCount = phaseCount > 0 ? phaseCount : 1;
   int xSpacing=grid_w/captureCount;
   if (xSpacing<minSpacing) {division=ceil(minSpacing*captureCount/grid_w);xSpacing=division*grid_w/captureCount;}
 
   int yMax=INT_MIN;
   int yMin=INT_MAX;
 
-for (int x = 0; x <= measurements; x++)
-for (int sensor = 0; sensor < NUM_SENSORS; sensor++) {
-int value = fluorescence[sensor][x];
+  // Autoscale the Y axis to the values of the current phase only, so the HRM
+  // segment gets its own fluorescence scale instead of reusing the PCR range.
+  for (int x = phaseStart; x <= measurements; x++)
+  for (int sensor = 0; sensor < NUM_SENSORS; sensor++) {
+  int value = fluorescence[sensor][x];
       
       if (value > yMax) {yMax = value;}
       if (value < yMin) {yMin = value;}
-}
+  }
+  if (yMax == INT_MIN) { yMax = 0; yMin = 0; }
 
   int yStep=10*ceil((yMax-yMin)/70.0);
   if (yMax-yMin<35) yStep=5;
@@ -2009,11 +2046,13 @@ int value = fluorescence[sensor][x];
   tftbuff.setTextDatum(MC_DATUM);
   tftbuff.setFreeFont(&GaudiSans7pt7b); 
 
-  // Draw vertical lines and labels (captures)
+  // Draw vertical lines and labels. In the PCR phase the labels are capture
+  // indices; in the MELT phase they are the ramp temperatures (°C).
   for (int i = 0; i <= (captureCount/division); i++) {
     int x = i * xSpacing;
     tftbuff.drawLine(x+margin_left, margin_top, x+margin_left, margin_top+grid_h, TFT_LIGHTGREY);
-     String label= String(i*division);
+     String label= inMelt ? String(pcrProtocol.meltFrom + (float)(i*division)*pcrProtocol.meltInc, 1)
+                          : String(i*division);
     tftbuff.drawString(label, x + margin_left, grid_h+margin_top+8);
   }
     tftbuff.drawLine(grid_w+margin_left, margin_top, grid_w+margin_left, margin_top+grid_h, TFT_LIGHTGREY);
@@ -2033,12 +2072,12 @@ if (((yMinLine+8*yStep)>=0)&&(yMinLine<=0))
     tftbuff.drawLine(margin_left, grid_h+margin_top+yMinLine/yStep*ySpacing, margin_left+grid_w, grid_h+margin_top+yMinLine/yStep*ySpacing, TFT_DARKGREY);
 
 
-// Draw Measurements
-
-for (int x = 0; x < measurements; x++)
+// Draw Measurements (current phase only)
+for (int x = phaseStart; x < measurements; x++)
 for (int sensor = 0; sensor < NUM_SENSORS; sensor++) {
 
-tftbuff.drawLine(margin_left+x*((float)xSpacing/division),grid_h+margin_top+(yMinLine-(fluorescence[sensor][x]))/yStep*ySpacing,margin_left+(x+1)*((float)xSpacing/division),grid_h+margin_top+(yMinLine-(fluorescence[sensor][x+1]))/yStep*ySpacing,my_palette[sensor]);
+int xl = x - phaseStart;
+tftbuff.drawLine(margin_left+xl*((float)xSpacing/division),grid_h+margin_top+(yMinLine-(fluorescence[sensor][x]))/yStep*ySpacing,margin_left+(xl+1)*((float)xSpacing/division),grid_h+margin_top+(yMinLine-(fluorescence[sensor][x+1]))/yStep*ySpacing,my_palette[sensor]);
 
 
   }
@@ -2058,6 +2097,7 @@ tftbuff.drawLine(margin_left+x*((float)xSpacing/division),grid_h+margin_top+(yMi
         tftbuff.print("== RUN COMPLETE ==");}
       else
       {
+      tftbuff.print(inMelt ? "HRM " : "PCR ");
       tftbuff.print("Step ");
       tftbuff.print(PCRstep+1);
       tftbuff.print(": ");
@@ -2174,9 +2214,13 @@ void emergencyShutdown() {
 int getProgress() {
   if (casePCR == PCR_END) return 100;
   if (pcrProtocol.stepCount == 0) return 0;
-  
-  if (pcrProtocol.melt && pcrProtocol.meltPoints > 0) {
-    return (int)((float)measurements / pcrProtocol.meltPoints * 100);
+
+  // MELT (HRM) phase: report progress over the melt points only, ignoring the
+  // PCR captures that precede them in the same measurements[] buffer.
+  if (pcrProtocol.melt && pcrProtocol.meltPoints > 0 && PCRstep >= meltStartStep()) {
+    int done = measurements - pcrCaptureCount();
+    if (done < 0) done = 0;
+    return (int)((float)done / pcrProtocol.meltPoints * 100);
   } else if (pcrProtocol.cycleCount > 0) {
     return (int)((float)PCRcycle / pcrProtocol.cycleCount * 100);
   }
@@ -2187,7 +2231,8 @@ String getModeString() {
   if (casePCR == PCR_END) return "COMPLETE";
   if (casePCR == PCR_HEATLID && caseUX != CASE_RunQPCR) return "IDLE";
   if (caseUX != CASE_RunQPCR) return "IDLE";
-  if (pcrProtocol.melt) return "HRM";
+  // Only report HRM once the run has actually reached the melt ramp.
+  if (pcrProtocol.melt && pcrProtocol.meltPoints > 0 && PCRstep >= meltStartStep()) return "HRM";
   return "PCR";
 }
 
