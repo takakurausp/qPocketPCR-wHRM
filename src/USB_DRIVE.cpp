@@ -606,37 +606,62 @@ void saveBinToSPIFFS(uint8_t binArray[],size_t binSize,const char* filename) {
         return;
     }
 
-    // Write the array to the file
-
-if( file.write((uint8_t *)binArray, binSize)){
-        Serial.println("- file written");
-    } else {
-        Serial.println("- write failed");
+    // Write in chunks and feed the watchdog. A single multi-10KB File::write()
+    // on SPIFFS can come up short (or let the 5s task watchdog fire), leaving a
+    // truncated base.bin/mask.bin that then reads back as "incomplete" on the
+    // next boot. This mirrors saveMscToSPIFFS().
+    const size_t chunkSize = 4096;
+    size_t written = 0;
+    while (written < binSize) {
+        size_t remaining = binSize - written;
+        size_t n = file.write((uint8_t *)binArray + written,
+                              remaining < chunkSize ? remaining : chunkSize);
+        if (n == 0) break;
+        written += n;
+        esp_task_wdt_reset();
     }
-
-    
     file.close();
+
+    if (written != binSize) {
+        Serial.printf("saveBinToSPIFFS: %s short write %u/%u bytes\n",
+                      filename, (unsigned)written, (unsigned)binSize);
+    } else {
+        Serial.printf("saveBinToSPIFFS: %s wrote %u bytes\n",
+                      filename, (unsigned)written);
+    }
 }
 
+// Returns false on success, true on failure, so the caller can render the
+// startup checklist correctly (an absent/short file is a failure).
 bool loadBinFromSPIFFS(uint8_t binArray[], size_t binSize, const char* filename) {
     File file = SPIFFS.open(filename, FILE_READ);
     if (!file) {
-        Serial.println("Failed to open file for reading");
-        return false; // Return false indicating failure
+        Serial.print("Failed to open file for reading: ");
+        Serial.println(filename);
+        return true; // failure
     }
 
-    // Read the array from the file
-    size_t bytesRead = file.readBytes((char *)binArray, binSize);
-    
+    // Read in chunks and loop until the whole buffer is filled. A single large
+    // readBytes() can return short, which previously surfaced as a spurious
+    // "Baseline loaded" error on the next boot.
+    size_t bytesRead = 0;
+    while (bytesRead < binSize) {
+        size_t n = file.read(binArray + bytesRead, binSize - bytesRead);
+        if (n == 0) break;
+        bytesRead += n;
+        esp_task_wdt_reset();
+    }
     file.close();
 
-    // Check if read operation was successful
     if (bytesRead != binSize) {
-        Serial.println("Error: Incomplete read");
-        return true; // Return true indicating failure
+        Serial.printf("loadBinFromSPIFFS: %s incomplete read %u/%u bytes\n",
+                      filename, (unsigned)bytesRead, (unsigned)binSize);
+        return true; // failure
     }
 
-    return false; // Return flase indicating success
+    Serial.printf("loadBinFromSPIFFS: %s loaded %u bytes\n",
+                  filename, (unsigned)bytesRead);
+    return false; // success
 }
 
 
@@ -674,11 +699,24 @@ void saveMaskToSPIFFS(uint8_t *maskBuf)
         free(packed);
         return;
     }
-    file.write((uint8_t *)packed, MASK_PACKED_BYTES + 1);
-    esp_task_wdt_reset();
+    size_t written = 0;
+    const size_t total = MASK_PACKED_BYTES + 1;
+    while (written < total) {
+        size_t n = file.write((uint8_t *)packed + written, total - written);
+        if (n == 0) break;
+        written += n;
+        esp_task_wdt_reset();
+    }
     file.close();
     free(packed);
-    Serial.printf("saveMaskToSPIFFS: wrote %d bytes (magic 0x%02X)\n", MASK_PACKED_BYTES + 1, MASK_MAGIC);
+
+    if (written != total) {
+        Serial.printf("saveMaskToSPIFFS: short write %u/%u bytes\n",
+                      (unsigned)written, (unsigned)total);
+    } else {
+        Serial.printf("saveMaskToSPIFFS: wrote %u bytes (magic 0x%02X)\n",
+                      (unsigned)written, MASK_MAGIC);
+    }
 }
 
 bool loadMaskFromSPIFFS(uint8_t *maskBuf)
@@ -700,11 +738,19 @@ bool loadMaskFromSPIFFS(uint8_t *maskBuf)
         return true; // failure
     }
 
-    size_t bytesRead = file.readBytes((char *)packed, MASK_PACKED_BYTES + 1);
+    const size_t total = MASK_PACKED_BYTES + 1;
+    size_t bytesRead = 0;
+    while (bytesRead < total) {
+        size_t n = file.read(packed + bytesRead, total - bytesRead);
+        if (n == 0) break;
+        bytesRead += n;
+        esp_task_wdt_reset();
+    }
     file.close();
 
-    if (bytesRead != MASK_PACKED_BYTES + 1) {
-        Serial.println("loadMaskFromSPIFFS: incomplete read");
+    if (bytesRead != total) {
+        Serial.printf("loadMaskFromSPIFFS: incomplete read %u/%u bytes\n",
+                      (unsigned)bytesRead, (unsigned)total);
         free(packed);
         return true; // failure
     }

@@ -89,6 +89,8 @@ void saveBinToSPIFFS(uint8_t binArray[],size_t binSize,const char* filename);
 
 bool readMscFromSPIFFS(uint8_t array[DISK_SECTOR_COUNT][DISK_SECTOR_SIZE]);
 
+// Read binSize bytes into binArray. Returns false=success, true=failure
+// (missing file or short read), matching loadMaskFromSPIFFS().
 bool loadBinFromSPIFFS(uint8_t binArray[], size_t binSize, const char* filename);
 
 // Mask (76800 pixels = 640 x 120) stored packed on SPIFFS as /mask.bin to save ~66KB.
